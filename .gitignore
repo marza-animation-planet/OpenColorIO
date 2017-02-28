@@ -4,3 +4,12 @@ build*
 dist*
 mastercopy
 *.pyc
+
+/release
+/debug
+/.build
+excons.cache
+*.dblite
+export/OpenColorIO/OpenColorABI.h
+src/pyglue/PyDoc.h
+ext/*/
