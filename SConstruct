@@ -8,26 +8,22 @@ from excons.tools import boost
 from excons.tools import python
 
 
-def InlineVisibilityHidden(env):
-   if sys.platform != "win32":
-      env.Append(CCFLAGS=["-fvisibility-inlines-hidden"])
-
 
 env = excons.MakeBaseEnv()
 
 
 # OpenColorIO config
-ocio_libname = excons.GetArgument("lib-name", None)
+ocio_libname = excons.GetArgument("ocio-lib-name", None)
 if ocio_libname is None:
    ocio_libname = "OpenColorIO"
-   ocio_libsuffix = excons.GetArgument("lib-suffix", None)
+   ocio_libsuffix = excons.GetArgument("ocio-lib-suffix", None)
    if ocio_libsuffix:
       ocio_libname += ocio_libsuffix
-ocio_static_libsuffix = excons.GetArgument("static-lib-suffix", "_s")
-ocio_sse2 = (excons.GetArgument("use-sse2", "1", int) != 0)
-ocio_hideinlines = (excons.GetArgument("hide-inlines", "1", int) != 0)
-ocio_namespace = excons.GetArgument("namespace", "OpenColorIO")
-ocio_use_boost = (excons.GetArgument("use-boost", "0", int) != 0)
+ocio_static_libsuffix = excons.GetArgument("ocio-static-lib-suffix", "_s")
+ocio_sse2 = (excons.GetArgument("ocio-use-sse2", "1", int) != 0)
+ocio_hideinlines = (excons.GetArgument("ocio-hide-inlines", "1", int) != 0)
+ocio_namespace = excons.GetArgument("ocio-namespace", "OpenColorIO")
+ocio_use_boost = (excons.GetArgument("ocio-use-boost", "0", int) != 0)
 ocio_version = (1, 0, 9)
 
 ocio_config = {"OCIO_NAMESPACE"     : ocio_namespace,
@@ -40,6 +36,16 @@ ocio_config = {"OCIO_NAMESPACE"     : ocio_namespace,
 
 libdefs = []
 libcflags = ""
+libcppflags = ""
+if sys.platform != "win32":
+   libcppflags += " -Wno-unused-parameter"
+   libcppflags += " -Wno-unused-variable"
+   libcppflags += " -Wno-missing-field-initializers"
+   if sys.platform != "darwin":
+      libcppflags += " -Wno-unused-but-set-variable"
+if sys.platform == "darwin":
+   # OSSpinLockUnlock used in Mutex.h is deprecated starting MacOS 10.12
+   libcppflags += " -Wno-deprecated-declarations"
 libincdirs = ["export", "src/core", "ext/oiio/src/include"]
 libcustoms = []
 if ocio_sse2:
@@ -50,7 +56,8 @@ if ocio_sse2:
       #libcflags += " /arch:SSE2"
       pass
 if ocio_hideinlines:
-   libcustoms.append(InlineVisibilityHidden)
+   if sys.platform != "win32":
+      libcflags += " -fvisibility-inlines-hidden"
 if ocio_use_boost:
    libcustoms.append(boost.Require())
 
@@ -73,6 +80,8 @@ if tinyxml_inc is None and tinyxml_lib is None:
    projs.append({ "name": "tinyxml",
                   "type": "staticlib",
                   "defs": ["TIXML_USE_STL"],
+                  "cflags": libcflags,
+                  "cppflags": libcppflags,
                   "srcs": glob.glob("ext/tinyxml/tiny*.cpp"),
                   "custom": libcustoms})
    tinyxml_inc = "ext/tinyxml"
@@ -99,6 +108,8 @@ if yamlcpp_inc is None and yamlcpp_lib is None:
    projs.append({ "name": "yaml-cpp",
                   "type": "staticlib",
                   "defs": ["YAML_CPP_NO_CONTRIB"],
+                  "cflags": libcflags,
+                  "cppflags": libcppflags,
                   "incdirs": ["ext/yaml-cpp/include"],
                   "srcs": glob.glob("ext/yaml-cpp/src/[a-zA-Z]*.cpp"),
                   "custom": libcustoms})
@@ -124,15 +135,18 @@ if lcms_inc is None and lcms_lib is None:
       f.extractall("ext")
       f.close()
    lcms_static = True
+   lcms_cppflags = libcppflags
+   if sys.platform != "win32":
+      lcms_cppflags += " -Wno-strict-aliasing"
    projs.append({ "name": "lcms2",
                   "type": "staticlib",
+                  "cflags": libcflags,
+                  "cppflags": lcms_cppflags,
                   "incdirs": ["ext/lcms2-2.1/include"],
                   "srcs": glob.glob("ext/lcms2-2.1/src/*.c"),
                   "custom": libcustoms})
    lcms_inc = "ext/lcms2-2.1/include"
    lcms_lib = excons.OutputBaseDirectory() + "/lib"
-   # defs?
-   # cflags?
 else:
    # For lcms2
    pass
@@ -140,9 +154,11 @@ lcms_incdirs = ([] if lcms_inc is None else [lcms_inc])
 lcms_libdirs = ([] if lcms_lib is None else [lcms_lib])
 lcms_staticlibs = ([lcms_libname] if lcms_static else [])
 lcms_libs = ([] if lcms_static else [lcms_libname])
+lcms_cppflags = ""
+if sys.platform != "win32":
+   lcms_cppflags += " -Wno-strict-aliasing"
 
 # TODO
-# - Python binding
 # - Nuke project
 
 def GenerateConfig(target, source, env):
@@ -176,8 +192,9 @@ projs.extend([
    {  "name": ocio_libname + ocio_static_libsuffix,
       "type": "staticlib",
       "alias": "staticlib",
-      "cflags": libcflags,
       "defs": libdefs + ["OpenColorIO_STATIC"],
+      "cflags": libcflags,
+      "cppflags": libcppflags,
       "incdirs": libincdirs + tinyxml_incdirs + yamlcpp_incdirs,
       "srcs": glob.glob("src/core/*.cpp") +
               glob.glob("src/core/md5/*.cpp") +
@@ -193,8 +210,9 @@ projs.extend([
       "version": ".".join(map(str, ocio_version)),
       "soname": "lib%s.so.%d" % (ocio_libname, ocio_version[0]),
       "install_name": "lib%s.%d.dylib" % (ocio_libname, ocio_version[0]),
-      "cflags": libcflags,
       "defs": libdefs + ["OpenColorIO_EXPORTS"],
+      "cflags": libcflags,
+      "cppflags": libcppflags,
       "incdirs": libincdirs + tinyxml_incdirs + yamlcpp_incdirs,
       "srcs": glob.glob("src/core/*.cpp") +
               glob.glob("src/core/md5/*.cpp") +
@@ -212,32 +230,38 @@ projs.extend([
       "prefix": python.ModulePrefix() + "/" + python.Version(),
       "incdirs": libincdirs + ["src/pyglue"],
       "defs": ["OpenColorIO_STATIC", "PYOCIO_NAME=PyOpenColorIO"],
-      "cppflags": " -Wno-missing-field-initializers" if sys.platform != "win32" else "",
+      "cflags": libcflags,
+      "cppflags": libcppflags,
       "srcs": glob.glob("src/pyglue/*.cpp"),
       "libdirs": tinyxml_libdirs + yamlcpp_libdirs,
       "staticlibs": [ocio_libname + ocio_static_libsuffix] + tinyxml_staticlibs + yamlcpp_staticlibs,
       "libs": tinyxml_libs + yamlcpp_libs,
-      "deps": [ocio_libname + ocio_static_libsuffix],
-      "custom": libcustoms + [python.SoftRequire]
+      "custom": libcustoms + [python.SoftRequire],
+      "deps": [ocio_libname + ocio_static_libsuffix]
    },
    # Command line tools
    {  "name": "ociobakelut",
       "type": "program",
-      "incdirs": libincdirs + ["src/apps/share"] + lcms_incdirs,
       "defs": ["OpenColorIO_STATIC"],
-      "libdirs": lcms_libdirs,
+      "cflags": libcflags,
+      "cppflags": libcppflags,
+      "incdirs": libincdirs + ["src/apps/share"] + lcms_incdirs,
+      "srcs": glob.glob("src/apps/ociobakelut/*.cpp") + ["src/apps/share/strutil.cpp", "src/apps/share/argparse.cpp"],
+      "libdirs": tinyxml_libdirs + yamlcpp_libdirs + lcms_libdirs,
       "staticlibs": [ocio_libname + ocio_static_libsuffix] + tinyxml_staticlibs + yamlcpp_staticlibs + lcms_staticlibs,
       "libs": tinyxml_libs + yamlcpp_libs + lcms_libs,
-      "srcs": glob.glob("src/apps/ociobakelut/*.cpp") + ["src/apps/share/strutil.cpp", "src/apps/share/argparse.cpp"],
       "custom": libcustoms
    },
    {  "name": "ociocheck",
       "type": "program",
-      "incdirs": libincdirs + ["src/apps/share"],
       "defs": ["OpenColorIO_STATIC"],
+      "cflags": libcflags,
+      "cppflags": libcppflags,
+      "incdirs": libincdirs + ["src/apps/share"],
+      "srcs": glob.glob("src/apps/ociocheck/*.cpp") + ["src/apps/share/strutil.cpp", "src/apps/share/argparse.cpp"],
+      "libdirs": tinyxml_libdirs + yamlcpp_libdirs,
       "staticlibs": [ocio_libname + ocio_static_libsuffix] + tinyxml_staticlibs + yamlcpp_staticlibs,
       "libs": tinyxml_libs + yamlcpp_libs,
-      "srcs": glob.glob("src/apps/ociocheck/*.cpp") + ["src/apps/share/strutil.cpp", "src/apps/share/argparse.cpp"],
       "custom": libcustoms
    }
 ])
