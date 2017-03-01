@@ -12,4 +12,5 @@ excons.cache
 *.dblite
 export/OpenColorIO/OpenColorABI.h
 src/pyglue/PyDoc.h
+src/core_tests/ocio_core_tests.sh
 ext/*/

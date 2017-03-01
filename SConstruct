@@ -2,8 +2,10 @@ import os
 import re
 import sys
 import glob
+import shutil
 import tarfile
 import excons
+import subprocess
 from excons.tools import boost
 from excons.tools import python
 
@@ -11,6 +13,8 @@ from excons.tools import python
 
 env = excons.MakeBaseEnv()
 
+incDir = "%s/include/OpenColorIO" % excons.OutputBaseDirectory()
+binDir = "%s/bin" % excons.OutputBaseDirectory()
 
 # OpenColorIO config
 ocio_libname = excons.GetArgument("ocio-lib-name", None)
@@ -33,6 +37,9 @@ ocio_config = {"OCIO_NAMESPACE"     : ocio_namespace,
                "OCIO_VERSION"       : ".".join(map(str, ocio_version)),
                "SOVERSION"          : str(ocio_version[0]),
                "OCIO_USE_BOOST_PTR" : str(1 if ocio_use_boost else 0)}
+
+tests_config = {"OCIO_TEST_AREA"           : binDir,
+                "CMAKE_CURRENT_BINARY_DIR" : binDir}
 
 libdefs = []
 libcflags = ""
@@ -164,7 +171,7 @@ if sys.platform != "win32":
 # TODO
 # - Nuke project
 
-def GenerateConfig(target, source, env):
+def GenerateFile(target, source, env, opts):
    with open(str(source[0]), "r") as src:
       with open(str(target[0]), "w") as dst:
          e = re.compile("@([^@]+)@")
@@ -172,21 +179,36 @@ def GenerateConfig(target, source, env):
             m = e.search(line)
             if m is not None:
                opt = m.group(1)
-               if opt in ocio_config:
+               if opt in opts:
                   # LLVM backend build not yet supported
-                  line = line.replace(m.group(0), ocio_config[opt])
+                  line = line.replace(m.group(0), opts[opt])
                else:
                   excons.WarnOnce("Unsupported config option '%s'" % opt)
             dst.write(line)
+   shutil.copystat(str(source[0]), str(target[0]))
+   return None
+
+def GenerateConfig(target, source, env):
+   return GenerateFile(target, source, env, ocio_config)
+
+def GenerateTester(target, source, env):
+   return GenerateFile(target, source, env, tests_config)
+
+def RunTests(target, source, env):
+   subprocess.call(str(target[0]) + ".sh")
    return None
 
 env["BUILDERS"]["GenerateConfig"] = Builder(action=Action(GenerateConfig, "Generating $TARGET ...", suffix=".h", src_suffix=".h.in"))
+env["BUILDERS"]["GenerateTester"] = Builder(action=Action(GenerateTester, "Generating $TARGET ...", suffix=".sh", src_suffix=".sh.in"))
 
 abih = env.GenerateConfig("export/OpenColorIO/OpenColorABI.h.in")
+tester = env.GenerateTester("src/core_tests/ocio_core_tests.sh.in")
 
-includeBasedir = "%s/include/OpenColorIO" % excons.OutputBaseDirectory()
-InstallHeaders  = env.Install(includeBasedir, glob.glob("export/OpenColorIO/*.h"))
-InstallHeaders += env.Install(includeBasedir, abih)
+
+InstallHeaders  = env.Install(incDir, glob.glob("export/OpenColorIO/*.h"))
+InstallHeaders += env.Install(incDir, abih)
+
+InstallTester = env.Install(binDir, tester)
 
 env.Command("src/pyglue/PyDoc.h", "src/pyglue/createPyDocH.py", "python $SOURCE $TARGET")
 
@@ -265,6 +287,23 @@ projs.extend([
       "staticlibs": [ocio_libname + ocio_static_libsuffix] + tinyxml_staticlibs + yamlcpp_staticlibs,
       "libs": tinyxml_libs + yamlcpp_libs,
       "custom": libcustoms
+   },
+   # Unit tests
+   {  "name": "ocio_core_tests",
+      "type": "program",
+      "alias": "tests",
+      "defs": libdefs + ["OpenColorIO_STATIC", "OCIO_UNIT_TEST", "OCIO_SOURCE_DIR=%s" % os.path.abspath(".")],
+      "cflags": libcflags,
+      "cppflags": libcppflags,
+      "incdirs": libincdirs + tinyxml_incdirs + yamlcpp_incdirs,
+      "srcs": glob.glob("src/core/*.cpp") +
+              glob.glob("src/core/md5/*.cpp") +
+              glob.glob("src/core/pystring/*.cpp"),
+      "libdirs": tinyxml_libdirs + yamlcpp_libdirs,
+      "staticlibs": tinyxml_staticlibs + yamlcpp_staticlibs,
+      "libs": tinyxml_libs + yamlcpp_libs,
+      "custom": libcustoms,
+      "post": [Action(RunTests, "Running Tests ...")]
    }
 ])
 
@@ -320,6 +359,7 @@ targets = excons.DeclareTargets(env, projs)
 
 env.Depends(targets["staticlib"], InstallHeaders)
 env.Depends(targets["sharedlib"], InstallHeaders)
+env.Depends(targets["tests"], InstallTester)
 
 env.Alias("tools", targets["ociobakelut"])
 env.Alias("tools", targets["ociocheck"])
