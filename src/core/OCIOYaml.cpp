@@ -1687,7 +1687,7 @@ OCIO_NAMESPACE_ENTER
             {
                 out << YAML::Key << "environment";
                 out << YAML::Value << YAML::BeginMap;
-                for(unsigned i = 0; i < c->getNumEnvironmentVars(); ++i)
+                for(int i = 0; i < c->getNumEnvironmentVars(); ++i)
                 {   
                     const char* name = c->getEnvironmentVarNameByIndex(i);
                     out << YAML::Key << name;
@@ -1718,7 +1718,7 @@ OCIO_NAMESPACE_ENTER
 #endif
             out << YAML::Key << "roles";
             out << YAML::Value << YAML::BeginMap;
-            for(unsigned i = 0; i < c->getNumRoles(); ++i)
+            for(int i = 0; i < c->getNumRoles(); ++i)
             {
                 const char* role = c->getRoleName(i);
                 out << YAML::Key << role;
@@ -1733,12 +1733,12 @@ OCIO_NAMESPACE_ENTER
             out << YAML::Newline;
             out << YAML::Key << "displays";
             out << YAML::Value << YAML::BeginMap;
-            for(unsigned i = 0; i < c->getNumDisplays(); ++i)
+            for(int i = 0; i < c->getNumDisplays(); ++i)
             {
                 const char* display = c->getDisplay(i);
                 out << YAML::Key << display;
                 out << YAML::Value << YAML::BeginSeq;
-                for(unsigned v = 0; v < c->getNumViews(display); ++v)
+                for(int v = 0; v < c->getNumViews(display); ++v)
                 {
                     View dview;
                     dview.name = c->getView(display, v);
@@ -1776,7 +1776,7 @@ OCIO_NAMESPACE_ENTER
                 out << YAML::Newline;
                 out << YAML::Key << "looks";
                 out << YAML::Value << YAML::BeginSeq;
-                for(unsigned i = 0; i < c->getNumLooks(); ++i)
+                for(int i = 0; i < c->getNumLooks(); ++i)
                 {
                     const char* name = c->getLookNameByIndex(i);
                     save(out, c->getLook(name));
@@ -1790,7 +1790,7 @@ OCIO_NAMESPACE_ENTER
                 out << YAML::Newline;
                 out << YAML::Key << "colorspaces";
                 out << YAML::Value << YAML::BeginSeq;
-                for(unsigned i = 0; i < c->getNumColorSpaces(); ++i)
+                for(int i = 0; i < c->getNumColorSpaces(); ++i)
                 {
                     const char* name = c->getColorSpaceNameByIndex(i);
                     save(out, c->getColorSpace(name));
