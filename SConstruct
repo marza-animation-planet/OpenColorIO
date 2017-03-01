@@ -206,7 +206,8 @@ def RunTests(target, source, env):
    return None
 
 def GeneratePyDoc(target, source, env):
-   subprocess.call("python %s %s" % (str(source[0]).replace("\\", "/"), str(target[0]).replace("\\", "/")))
+   p = subprocess.Popen(["python", str(source[0]), str(target[0])])
+   p.communicate()
    return None
 
 env["BUILDERS"]["GenerateConfig"] = Builder(action=Action(GenerateConfig, "Generating $TARGET ...", suffix=".h", src_suffix=".h.in"))
