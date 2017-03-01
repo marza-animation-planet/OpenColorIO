@@ -750,7 +750,7 @@ OCIO_NAMESPACE_EXIT
 
 #include <cstring>
 #include <cstdlib>
-#include <sys/time.h>
+//#include <sys/time.h>
 
 namespace OCIO = OCIO_NAMESPACE;
 #include "UnitTest.h"

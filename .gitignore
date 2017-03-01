@@ -13,4 +13,5 @@ excons.cache
 export/OpenColorIO/OpenColorABI.h
 src/pyglue/PyDoc.h
 src/core_tests/ocio_core_tests.sh
+src/core_tests/ocio_core_tests.bat
 ext/*/

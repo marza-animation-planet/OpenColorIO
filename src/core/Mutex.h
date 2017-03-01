@@ -78,23 +78,26 @@ OCIO_NAMESPACE_ENTER
     template <class T>
     class DebugLock : public T {
      public:
-	DebugLock() : _locked(0) {}
-	void lock()   { T::lock(); _locked = 1; }
-	void unlock() { assert(_locked); _locked = 0; T::unlock(); }
-	bool locked() { return _locked != 0; }
+      DebugLock() : _locked(0) {}
+      void lock()   { T::lock(); _locked = 1; }
+      void unlock() { assert(_locked); _locked = 0; T::unlock(); }
+      bool locked() { return _locked != 0; }
      private:
-	int _locked;
+      int _locked;
     };
 #endif
 
     /** Automatically acquire and release lock within enclosing scope. */
     template <class T>
     class AutoLock {
-    public:
-	AutoLock(T& m) : _m(m) { _m.lock(); }
-	~AutoLock()            { _m.unlock(); }
-    private:
-	T& _m;
+     public:
+      AutoLock(T& m) : _m(m) { _m.lock(); }
+      ~AutoLock()            { _m.unlock(); }
+     private:
+      AutoLock();
+      AutoLock(const AutoLock &);
+      AutoLock& operator=(const AutoLock&);
+      T& _m;
     };
 
 #ifndef NDEBUG

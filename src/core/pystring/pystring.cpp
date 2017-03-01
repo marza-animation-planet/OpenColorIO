@@ -455,7 +455,7 @@ typedef int Py_ssize_t;
                                        (Py_ssize_t) start, (Py_ssize_t) end, +1);
         //if (result == -1) // TODO: Error condition
         
-        return static_cast<bool>(result);
+        return (result != 0);
     }
     
     
@@ -465,7 +465,7 @@ typedef int Py_ssize_t;
                                        (Py_ssize_t) start, (Py_ssize_t) end, -1);
         //if (result == -1) // TODO: Error condition
         
-        return static_cast<bool>(result);
+        return (result != 0);
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////////
@@ -480,7 +480,7 @@ typedef int Py_ssize_t;
 
         if( len == 1 )
         {
-            return ::isalnum( str[0] );
+            return (::isalnum( str[0] ) != 0);
         }
 
         for ( i = 0; i < len; ++i )
@@ -497,7 +497,7 @@ typedef int Py_ssize_t;
     {
         std::string::size_type len = str.size(), i;
         if ( len == 0 ) return false;
-        if( len == 1 ) return ::isalpha( (int) str[0] );
+        if( len == 1 ) return (::isalpha( (int) str[0] ) != 0);
 
         for ( i = 0; i < len; ++i )
         {
@@ -513,7 +513,7 @@ typedef int Py_ssize_t;
     {
         std::string::size_type len = str.size(), i;
         if ( len == 0 ) return false;
-        if( len == 1 ) return ::isdigit( str[0] );
+        if( len == 1 ) return (::isdigit( str[0] ) != 0);
 
         for ( i = 0; i < len; ++i )
         {
@@ -529,7 +529,7 @@ typedef int Py_ssize_t;
     {
         std::string::size_type len = str.size(), i;
         if ( len == 0 ) return false;
-        if( len == 1 ) return ::islower( str[0] );
+        if( len == 1 ) return (::islower( str[0] ) != 0);
 
         for ( i = 0; i < len; ++i )
         {
@@ -545,7 +545,7 @@ typedef int Py_ssize_t;
     {
         std::string::size_type len = str.size(), i;
         if ( len == 0 ) return false;
-        if( len == 1 ) return ::isspace( str[0] );
+        if( len == 1 ) return (::isspace( str[0] ) != 0);
 
         for ( i = 0; i < len; ++i )
         {
@@ -562,7 +562,7 @@ typedef int Py_ssize_t;
         std::string::size_type len = str.size(), i;
 
         if ( len == 0 ) return false;
-        if ( len == 1 ) return ::isupper( str[0] );
+        if ( len == 1 ) return (::isupper( str[0] ) != 0);
 
         bool cased = false, previous_is_cased = false;
 
@@ -605,7 +605,7 @@ typedef int Py_ssize_t;
     {
         std::string::size_type len = str.size(), i;
         if ( len == 0 ) return false;
-        if( len == 1 ) return ::isupper( str[0] );
+        if( len == 1 ) return (::isupper( str[0] ) != 0);
 
         for ( i = 0; i < len; ++i )
         {

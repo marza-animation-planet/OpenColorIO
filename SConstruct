@@ -13,8 +13,8 @@ from excons.tools import python
 
 env = excons.MakeBaseEnv()
 
-incDir = "%s/include/OpenColorIO" % excons.OutputBaseDirectory()
-binDir = "%s/bin" % excons.OutputBaseDirectory()
+incDir = "%s/include/OpenColorIO" % excons.OutputBaseDirectory().replace("\\", "/")
+binDir = "%s/bin" % excons.OutputBaseDirectory().replace("\\", "/")
 
 # OpenColorIO config
 ocio_libname = excons.GetArgument("ocio-lib-name", None)
@@ -24,10 +24,10 @@ if ocio_libname is None:
    if ocio_libsuffix:
       ocio_libname += ocio_libsuffix
 ocio_static_libsuffix = excons.GetArgument("ocio-static-lib-suffix", "_s")
-ocio_sse2 = (excons.GetArgument("ocio-use-sse2", "1", int) != 0)
-ocio_hideinlines = (excons.GetArgument("ocio-hide-inlines", "1", int) != 0)
+ocio_sse2 = (excons.GetArgument("ocio-use-sse2", 1, int) != 0)
+ocio_hideinlines = (excons.GetArgument("ocio-hide-inlines", 1, int) != 0)
 ocio_namespace = excons.GetArgument("ocio-namespace", "OpenColorIO")
-ocio_use_boost = (excons.GetArgument("ocio-use-boost", "0", int) != 0)
+ocio_use_boost = (excons.GetArgument("ocio-use-boost", 0, int) != 0)
 ocio_version = (1, 0, 9)
 
 ocio_config = {"OCIO_NAMESPACE"     : ocio_namespace,
@@ -53,6 +53,10 @@ if sys.platform != "win32":
    else:
       libcppflags += " -Wno-unused-private-field"
       libcppflags += " -Wno-unused-function"
+else:
+   libcppflags += " /wd4101"
+   libcppflags += " /wd4996"
+   libdefs.append("_CRT_SECURE_NO_WARNINGS")
 if sys.platform == "darwin":
    # OSSpinLockUnlock used in Mutex.h is deprecated starting MacOS 10.12
    libcppflags += " -Wno-deprecated-declarations"
@@ -77,7 +81,7 @@ projs = []
 
 # TinyXML setup
 tinyxml_libname = excons.GetArgument("tinyxml-lib-name", "tinyxml")
-tinyxml_static = (excons.GetArgument("tinayxml-static", "1", int) != 0)
+tinyxml_static = (excons.GetArgument("tinayxml-static", 1, int) != 0)
 tinyxml_inc, tinyxml_lib = excons.GetDirs("tinyxml", silent=True)
 if tinyxml_inc is None and tinyxml_lib is None:
    if not os.path.isdir("ext/tinyxml"):
@@ -106,7 +110,7 @@ tinyxml_libs = ([] if tinyxml_static else [tinyxml_libname])
 
 # YAMLcpp setup
 yamlcpp_libname = excons.GetArgument("yamlcpp-lib-name", "yaml-cpp")
-yamlcpp_static = (excons.GetArgument("yamlcpp-static", "1", int) != 0)
+yamlcpp_static = (excons.GetArgument("yamlcpp-static", 1, int) != 0)
 yamlcpp_inc, yamlcpp_lib = excons.GetDirs("yamlcpp", silent=True)
 if yamlcpp_inc is None and yamlcpp_lib is None:
    if not os.path.isdir("ext/yaml-cpp"):
@@ -136,7 +140,7 @@ yamlcpp_libs = ([] if yamlcpp_static else [yamlcpp_libname])
 
 # LCMS setup
 lcms_libname = excons.GetArgument("lcms-lib-name", "lcms2")
-lcms_static = (excons.GetArgument("lcms-static", "1", int) != 0)
+lcms_static = (excons.GetArgument("lcms-static", 1, int) != 0)
 lcms_inc, lcms_lib = excons.GetDirs("lcms", silent=True)
 if lcms_inc is None and lcms_lib is None:
    if not os.path.isdir("ext/lcms2-2.1"):
@@ -195,14 +199,25 @@ def GenerateTester(target, source, env):
    return GenerateFile(target, source, env, tests_config)
 
 def RunTests(target, source, env):
-   subprocess.call(str(target[0]) + ".sh")
+   if sys.platform == "win32":
+      subprocess.call(os.path.splitext(str(target[0]))[0] + ".bat")
+   else:
+      subprocess.call(str(target[0]) + ".sh")
+   return None
+
+def GeneratePyDoc(target, source, env):
+   subprocess.call("python %s %s" % (str(source[0]).replace("\\", "/"), str(target[0]).replace("\\", "/")))
    return None
 
 env["BUILDERS"]["GenerateConfig"] = Builder(action=Action(GenerateConfig, "Generating $TARGET ...", suffix=".h", src_suffix=".h.in"))
-env["BUILDERS"]["GenerateTester"] = Builder(action=Action(GenerateTester, "Generating $TARGET ...", suffix=".sh", src_suffix=".sh.in"))
+env["BUILDERS"]["GenerateTester"] = Builder(action=Action(GenerateTester, "Generating $TARGET ...", suffix="", src_suffix=".in"))
+env["BUILDERS"]["GeneratePyDoc"] = Builder(action=Action(GeneratePyDoc, "Generating $TARGET ..."))
 
 abih = env.GenerateConfig("export/OpenColorIO/OpenColorABI.h.in")
-tester = env.GenerateTester("src/core_tests/ocio_core_tests.sh.in")
+if sys.platform != "win32":
+   tester = env.GenerateTester("src/core_tests/ocio_core_tests.sh.in")
+else:
+   tester = env.GenerateTester("src/core_tests/ocio_core_tests.bat.in")
 
 
 InstallHeaders  = env.Install(incDir, glob.glob("export/OpenColorIO/*.h"))
@@ -210,7 +225,7 @@ InstallHeaders += env.Install(incDir, abih)
 
 InstallTester = env.Install(binDir, tester)
 
-env.Command("src/pyglue/PyDoc.h", "src/pyglue/createPyDocH.py", "python $SOURCE $TARGET")
+pydoc = env.GeneratePyDoc("src/pyglue/PyDoc.h", "src/pyglue/createPyDocH.py")
 
 projs.extend([
    {  "name": ocio_libname + ocio_static_libsuffix,
@@ -266,7 +281,7 @@ projs.extend([
    # Command line tools
    {  "name": "ociobakelut",
       "type": "program",
-      "defs": ["OpenColorIO_STATIC"],
+      "defs": libdefs + ["OpenColorIO_STATIC"],
       "cflags": libcflags,
       "cppflags": libcppflags,
       "incdirs": libincdirs + ["src/apps/share"] + lcms_incdirs,
@@ -278,7 +293,7 @@ projs.extend([
    },
    {  "name": "ociocheck",
       "type": "program",
-      "defs": ["OpenColorIO_STATIC"],
+      "defs": libdefs + ["OpenColorIO_STATIC"],
       "cflags": libcflags,
       "cppflags": libcppflags,
       "incdirs": libincdirs + ["src/apps/share"],
@@ -292,7 +307,7 @@ projs.extend([
    {  "name": "ocio_core_tests",
       "type": "program",
       "alias": "tests",
-      "defs": libdefs + ["OpenColorIO_STATIC", "OCIO_UNIT_TEST", "OCIO_SOURCE_DIR=%s" % os.path.abspath(".")],
+      "defs": libdefs + ["OpenColorIO_STATIC", "OCIO_UNIT_TEST", "OCIO_SOURCE_DIR=\"%s\"" % os.path.abspath(".").replace("\\", "/")],
       "cflags": libcflags,
       "cppflags": libcppflags,
       "incdirs": libincdirs + tinyxml_incdirs + yamlcpp_incdirs,

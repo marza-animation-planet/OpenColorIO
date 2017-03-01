@@ -29,6 +29,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <cstring>
 
 #include <OpenColorIO/OpenColorIO.h>
+#include "Platform.h"
 
 #ifndef WINDOWS
 

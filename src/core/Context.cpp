@@ -153,7 +153,7 @@ namespace
     {
         AutoMutex lock(getImpl()->resultsCacheMutex_);
         
-        getImpl()->searchPath_ = path;
+        getImpl()->searchPath_ = pystring::os::path::normpath(path);
         getImpl()->resultsCache_.clear();
         getImpl()->cacheID_ = "";
     }
@@ -167,7 +167,7 @@ namespace
     {
         AutoMutex lock(getImpl()->resultsCacheMutex_);
         
-        getImpl()->workingDir_ = dirname;
+        getImpl()->workingDir_ = pystring::os::path::normpath(dirname);
         getImpl()->resultsCache_.clear();
         getImpl()->cacheID_ = "";
     }
@@ -278,7 +278,7 @@ namespace
         
         std::string resolvedval = EnvExpand(val, getImpl()->envMap_);
         
-        getImpl()->resultsCache_[val] = resolvedval;
+        getImpl()->resultsCache_[val] = pystring::os::path::normpath(resolvedval);
         return getImpl()->resultsCache_[val].c_str();
     }
     
@@ -293,7 +293,9 @@ namespace
             return "";
         }
         
-        StringMap::const_iterator iter = getImpl()->resultsCache_.find(filename);
+        std::string nfilename = pystring::os::path::normpath(filename);
+        
+        StringMap::const_iterator iter = getImpl()->resultsCache_.find(nfilename);
         if(iter != getImpl()->resultsCache_.end())
         {
             return iter->second.c_str();
@@ -301,13 +303,13 @@ namespace
         
         // Attempt to load an absolute file reference
         {
-        std::string expandedfullpath = EnvExpand(filename, getImpl()->envMap_);
+        std::string expandedfullpath = EnvExpand(nfilename, getImpl()->envMap_);
         if(pystring::os::path::isabs(expandedfullpath))
         {
             if(FileExists(expandedfullpath))
             {
-                getImpl()->resultsCache_[filename] = expandedfullpath;
-                return getImpl()->resultsCache_[filename].c_str();
+                getImpl()->resultsCache_[nfilename] = pystring::os::path::normpath(expandedfullpath);
+                return getImpl()->resultsCache_[nfilename].c_str();
             }
             std::ostringstream errortext;
             errortext << "The specified absolute file reference ";
@@ -328,18 +330,18 @@ namespace
         // Loop over each path, and try to find the file
         std::ostringstream errortext;
         errortext << "The specified file reference ";
-        errortext << " '" << filename << "' could not be located. ";
+        errortext << " '" << nfilename << "' could not be located. ";
         errortext << "The following attempts were made: ";
         
         for (unsigned int i = 0; i < searchpaths.size(); ++i)
         {
             // Make an attempt to find the lut in one of the search paths
-            std::string fullpath = pystring::os::path::join(searchpaths[i], filename);
+            std::string fullpath = pystring::os::path::join(searchpaths[i], nfilename);
             std::string expandedfullpath = EnvExpand(fullpath, getImpl()->envMap_);
             if(FileExists(expandedfullpath))
             {
-                getImpl()->resultsCache_[filename] = expandedfullpath;
-                return getImpl()->resultsCache_[filename].c_str();
+                getImpl()->resultsCache_[nfilename] = pystring::os::path::normpath(expandedfullpath);
+                return getImpl()->resultsCache_[nfilename].c_str();
             }
             if(i!=0) errortext << " : ";
             errortext << expandedfullpath;
@@ -367,6 +369,12 @@ namespace
 
 namespace
 {
+#ifdef _WIN32
+#define PATHSEP ";"
+#else
+#define PATHSEP ":"
+#endif
+
     void GetAbsoluteSearchPaths(std::vector<std::string> & searchpaths,
                                 const std::string & pathString,
                                 const std::string & workingDir,
@@ -379,7 +387,7 @@ namespace
         }
         
         std::vector<std::string> parts;
-        pystring::split(pathString, parts, ":");
+        pystring::split(pathString, parts, PATHSEP);
         
         for (unsigned int i = 0; i < parts.size(); ++i)
         {
@@ -421,16 +429,16 @@ OIIO_ADD_TEST(Context, ABSPath)
     OCIO::ContextRcPtr con = OCIO::Context::Create();
     con->setSearchPath(STR(OCIO_SOURCE_DIR));
     
+    std::string contextPath = OCIO::pystring::os::path::normpath(STR(OCIO_SOURCE_DIR) "/src/core/Context.cpp");
+    
     con->setStringVar("non_abs", "src/core/Context.cpp");
     con->setStringVar("is_abs", STR(OCIO_SOURCE_DIR) "/src/core/Context.cpp");
     
     OIIO_CHECK_NO_THOW(con->resolveFileLocation("${non_abs}"));
-    OIIO_CHECK_ASSERT(strcmp(con->resolveFileLocation("${non_abs}"),
-        STR(OCIO_SOURCE_DIR) "/src/core/Context.cpp") == 0);
+    OIIO_CHECK_ASSERT(strcmp(con->resolveFileLocation("${non_abs}"), contextPath.c_str()) == 0);
     
     OIIO_CHECK_NO_THOW(con->resolveFileLocation("${is_abs}"));
-    OIIO_CHECK_ASSERT(strcmp(con->resolveFileLocation("${is_abs}"),
-        STR(OCIO_SOURCE_DIR) "/src/core/Context.cpp") == 0);
+    OIIO_CHECK_ASSERT(strcmp(con->resolveFileLocation("${is_abs}"), contextPath.c_str()) == 0);
     
 }
 
@@ -441,9 +449,10 @@ OIIO_ADD_TEST(Context, VarSearchPath)
     context->setStringVar("SOURCE_DIR", STR(OCIO_SOURCE_DIR));
     context->setSearchPath("${SOURCE_DIR}/src/core");
 
+    std::string contextPath = OCIO::pystring::os::path::normpath(STR(OCIO_SOURCE_DIR) "/src/core/Context.cpp");
+
     OIIO_CHECK_NO_THOW(context->resolveFileLocation("Context.cpp"));
-    OIIO_CHECK_ASSERT(strcmp(context->resolveFileLocation("Context.cpp"),
-                             STR(OCIO_SOURCE_DIR) "/src/core/Context.cpp") == 0);
+    OIIO_CHECK_ASSERT(strcmp(context->resolveFileLocation("Context.cpp"), contextPath.c_str()) == 0);
 
 }
 
