@@ -43,6 +43,9 @@ if sys.platform != "win32":
    libcppflags += " -Wno-missing-field-initializers"
    if sys.platform != "darwin":
       libcppflags += " -Wno-unused-but-set-variable"
+   else:
+      libcppflags += " -Wno-unused-private-field"
+      libcppflags += " -Wno-unused-function"
 if sys.platform == "darwin":
    # OSSpinLockUnlock used in Mutex.h is deprecated starting MacOS 10.12
    libcppflags += " -Wno-deprecated-declarations"
@@ -184,7 +187,6 @@ abih = env.GenerateConfig("export/OpenColorIO/OpenColorABI.h.in")
 includeBasedir = "%s/include/OpenColorIO" % excons.OutputBaseDirectory()
 InstallHeaders  = env.Install(includeBasedir, glob.glob("export/OpenColorIO/*.h"))
 InstallHeaders += env.Install(includeBasedir, abih)
-print("Headers %s" % map(str, InstallHeaders))
 
 env.Command("src/pyglue/PyDoc.h", "src/pyglue/createPyDocH.py", "python $SOURCE $TARGET")
 
