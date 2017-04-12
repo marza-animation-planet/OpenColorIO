@@ -33,6 +33,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef WINDOWS
 
+/*
 // fwd declare yaml-cpp visibility
 #pragma GCC visibility push(hidden)
 namespace YAML {
@@ -65,6 +66,7 @@ namespace YAML {
     template <> class TypedKeyNotFound<OCIO_NAMESPACE::TruelightTransform>;
 }
 #pragma GCC visibility pop
+*/
 
 #endif
 
