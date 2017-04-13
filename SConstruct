@@ -154,6 +154,23 @@ else:
 # - Nuke project
 
 
+def CheckConfigStatus(path, opts):
+   if not os.path.isfile(path):
+      return True
+   else:
+      with open(path, "r") as f:
+         for line in f.readlines():
+            spl = line.strip().split(" ")
+            if spl[0] in opts:
+               if str(opts[spl[0]]) != " ".join(spl[1:]):
+                  return True
+      return False
+
+def WriteConfigStatus(path, opts):
+   with open(path, "w") as f:
+      for k, v in opts.iteritems():
+         f.write("%s %s\n" % (k, v))
+      f.write("\n")
 
 def GenerateFile(target, source, env, opts):
    with open(str(source[0]), "r") as src:
@@ -194,17 +211,26 @@ env["BUILDERS"]["GenerateConfig"] = Builder(action=Action(GenerateConfig, "Gener
 env["BUILDERS"]["GenerateTester"] = Builder(action=Action(GenerateTester, "Generating $TARGET ...", suffix="", src_suffix=".in"))
 env["BUILDERS"]["GeneratePyDoc"] = Builder(action=Action(GeneratePyDoc, "Generating $TARGET ..."))
 
-abih = env.GenerateConfig("export/OpenColorIO/OpenColorABI.h.in")
+
+# OpenColorABI.h is generated directly in the output, avoid possible conflicts
+if os.path.isfile("export/OpenColorIO/OpenColorABI.h"):
+   os.remove("export/OpenColorIO/OpenColorABI.h")
+
+if CheckConfigStatus("lib_config.status", ocio_config):
+   WriteConfigStatus("lib_config.status", ocio_config)
+
+if CheckConfigStatus("test_config.status", tests_config):
+   WriteConfigStatus("test_config.status", tests_config)
+
+
+abih = env.GenerateConfig(incDir + "/OpenColorABI.h", ["export/OpenColorIO/OpenColorABI.h.in", "lib_config.status"])
 if sys.platform != "win32":
-   tester = env.GenerateTester("src/core_tests/ocio_core_tests.sh.in")
+   tester = env.GenerateTester(binDir + "/ocio_core_tests.sh", ["src/core_tests/ocio_core_tests.sh.in", "test_config.status"])
 else:
-   tester = env.GenerateTester("src/core_tests/ocio_core_tests.bat.in")
+   tester = env.GenerateTester(binDir + "/ocio_core_tests.bat", ["src/core_tests/ocio_core_tests.bat.in", "test_config.status"])
 
 
-InstallHeaders  = env.Install(incDir, glob.glob("export/OpenColorIO/*.h"))
-InstallHeaders += env.Install(incDir, abih)
-
-InstallTester = env.Install(binDir, tester)
+InstallHeaders = env.Install(incDir, glob.glob("export/OpenColorIO/*.h"))
 
 pydoc = env.GeneratePyDoc("src/pyglue/PyDoc.h", "src/pyglue/createPyDocH.py")
 
@@ -335,7 +361,7 @@ targets = excons.DeclareTargets(env, projs)
 
 env.Depends(targets["ocio-shared"], InstallHeaders)
 env.Depends(targets["ocio-static"], InstallHeaders)
-env.Depends(targets["ocio-tests"], InstallTester)
+env.Alias("ocio-tests", tester)
 env.Alias("ocio", targets["ocio-shared"])
 env.Alias("ocio", targets["ocio-static"])
 env.Alias("ocio", targets["ocio-python"])
