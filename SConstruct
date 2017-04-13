@@ -58,6 +58,7 @@ if sys.platform != "win32":
 else:
    cppflags += " /wd4101"
    cppflags += " /wd4996"
+   cppflags += " /wd4251"
    defs.append("_CRT_SECURE_NO_WARNINGS")
 if sys.platform == "darwin":
    # OSSpinLockUnlock used in Mutex.h is deprecated starting MacOS 10.12
