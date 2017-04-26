@@ -23,7 +23,6 @@ if ocio_libname is None:
    ocio_libsuffix = excons.GetArgument("ocio-suffix", None)
    if ocio_libsuffix:
       ocio_libname += ocio_libsuffix
-ocio_static_libsuffix = excons.GetArgument("ocio-static-suffix", "_s")
 ocio_sse2 = (excons.GetArgument("ocio-use-sse2", 1, int) != 0)
 ocio_hideinlines = (excons.GetArgument("ocio-hide-inlines", 1, int) != 0)
 ocio_namespace = excons.GetArgument("ocio-namespace", "OpenColorIO")
@@ -80,9 +79,6 @@ if ocio_use_boost:
 
 
 
-libdeps = []
-bakedeps = []
-
 # TinyXML setup
 def TinyXmlDefines(static):
    if excons.GetArgument("tinyxml-use-stl", 1, int) != 0:
@@ -96,7 +92,6 @@ if rv["require"] is None:
    excons.Call("TinyXML", imp=["RequireTinyXml"])
    def TinyXmlRequire(env):
       RequireTinyXml(env)
-   libdeps.append("tinyxml")
 else:
    TinyXmlRequire = rv["require"]
 
@@ -121,7 +116,6 @@ if not rv["require"]:
    excons.Call("yaml-cpp", imp=["RequireYamlCpp"])
    def YamlCppRequire(env):
       RequireYamlCpp(env)
-   libdeps.append("yamlcpp")
 else:
    YamlCppRequire = rv["require"]
 
@@ -143,7 +137,6 @@ if not rv["require"]:
       excons.Call("Little-CMS", imp=["RequireLCMS2"])
       def Lcms2Require(env):
          RequireLCMS2(env)
-      bakedeps.append("lcms2")
    else:
       def Lcms2Require(env):
          pass
@@ -230,13 +223,16 @@ else:
    tester = env.GenerateTester(binDir + "/ocio_core_tests.bat", ["src/core_tests/ocio_core_tests.bat.in", "test_config.status"])
 
 
-InstallHeaders = env.Install(incDir, glob.glob("export/OpenColorIO/*.h"))
+InstallHeaders = env.Install(incDir, excons.glob("export/OpenColorIO/*.h"))
 
 pydoc = env.GeneratePyDoc("src/pyglue/PyDoc.h", "src/pyglue/createPyDocH.py")
 
 
 def OCIOName(static=True):
-   return (ocio_libname + (ocio_static_libsuffix if static else ""))
+   if sys.platform == "win32" and static:
+      return "lib" + ocio_libname
+   else:
+      return ocio_libname
 
 def OCIOPath(static=True):
    name = OCIOName(static)
@@ -253,7 +249,7 @@ def RequireOCIO(env, static=True):
       env.Append(CPPDEFINES=["USE_SSE"])
    env.Append(CPPPATH=[excons.OutputBaseDirectory() + "/include"])
    env.Append(LIBPATH=[excons.OutputBaseDirectory() + "/lib"])
-   excons.Link(env, OCIOName(static), static=static, force=True, silent=True)
+   excons.Link(env, OCIOPath(static), static=static, force=True, silent=True)
    if static:
       RequireYamlCpp(env)
       RequireTinyXml(env)
@@ -263,7 +259,7 @@ def RequireOCIO(env, static=True):
 
 
 projs = [
-   {  "name": ocio_libname + ocio_static_libsuffix,
+   {  "name": OCIOName(True),
       "type": "staticlib",
       "alias": "ocio-static",
       "symvis": "default",
@@ -271,13 +267,12 @@ projs = [
       "cflags": cflags,
       "cppflags": cppflags,
       "incdirs": libincdirs,
-      "srcs": glob.glob("src/core/*.cpp") +
-              glob.glob("src/core/md5/*.cpp") +
-              glob.glob("src/core/pystring/*.cpp"),
-      "deps": libdeps,
+      "srcs": excons.glob("src/core/*.cpp") +
+              excons.glob("src/core/md5/*.cpp") +
+              excons.glob("src/core/pystring/*.cpp"),
       "custom": libcustoms
    },
-   {  "name": ocio_libname,
+   {  "name": OCIOName(False),
       "type": "sharedlib",
       "alias": "ocio-shared",
       "version": ".".join(map(str, ocio_version)),
@@ -287,10 +282,9 @@ projs = [
       "cflags": cflags,
       "cppflags": cppflags,
       "incdirs": libincdirs,
-      "srcs": glob.glob("src/core/*.cpp") +
-              glob.glob("src/core/md5/*.cpp") +
-              glob.glob("src/core/pystring/*.cpp"),
-      "deps": libdeps,
+      "srcs": excons.glob("src/core/*.cpp") +
+              excons.glob("src/core/md5/*.cpp") +
+              excons.glob("src/core/pystring/*.cpp"),
       "custom": libcustoms
    },
    # Python binding
@@ -303,9 +297,8 @@ projs = [
       "defs": ["PYOCIO_NAME=PyOpenColorIO"],
       "cflags": cflags,
       "cppflags": cppflags,
-      "srcs": glob.glob("src/pyglue/*.cpp"),
+      "srcs": excons.glob("src/pyglue/*.cpp"),
       "custom": [lambda x: RequireOCIO(x, static=True), python.SoftRequire],
-      "deps": ["ocio-static"]
    },
    # Command line tools
    {  "name": "ociobakelut",
@@ -314,9 +307,8 @@ projs = [
       "cflags": cflags,
       "cppflags": cppflags,
       "incdirs": ["src/apps/share"],
-      "srcs": glob.glob("src/apps/ociobakelut/*.cpp") + ["src/apps/share/strutil.cpp", "src/apps/share/argparse.cpp"],
+      "srcs": excons.glob("src/apps/ociobakelut/*.cpp") + ["src/apps/share/strutil.cpp", "src/apps/share/argparse.cpp"],
       "custom": [lambda x: RequireOCIO(x, static=True), Lcms2Require],
-      "deps": ["ocio-static"] + bakedeps
    },
    {  "name": "ociocheck",
       "type": "program",
@@ -324,9 +316,8 @@ projs = [
       "cflags": cflags,
       "cppflags": cppflags,
       "incdirs": ["src/apps/share"],
-      "srcs": glob.glob("src/apps/ociocheck/*.cpp") + ["src/apps/share/strutil.cpp", "src/apps/share/argparse.cpp"],
+      "srcs": excons.glob("src/apps/ociocheck/*.cpp") + ["src/apps/share/strutil.cpp", "src/apps/share/argparse.cpp"],
       "custom": [lambda x: RequireOCIO(x, static=True)],
-      "deps": ["ocio-static"]
    },
    # Unit tests
    {  "name": "ocio_core_tests",
@@ -335,11 +326,10 @@ projs = [
       "defs": defs + ["OCIO_UNIT_TEST", "OCIO_SOURCE_DIR=\"%s\"" % os.path.abspath(".").replace("\\", "/")],
       "cflags": cflags,
       "cppflags": cppflags,
-      "srcs": glob.glob("src/core/*.cpp") +
-              glob.glob("src/core/md5/*.cpp") +
-              glob.glob("src/core/pystring/*.cpp"),
+      "srcs": excons.glob("src/core/*.cpp") +
+              excons.glob("src/core/md5/*.cpp") +
+              excons.glob("src/core/pystring/*.cpp"),
       "custom": [lambda x: RequireOCIO(x, static=True)],
-      "deps": ["ocio-static"],
       "post": [Action(RunTests, "Running Tests ...")]
    }
 ]
@@ -348,20 +338,26 @@ excons.AddHelpOptions(opencolorio="""OPENCOLORIO OPTIONS
   ocio-name                    : Library name                       ["OpenColorIO"]
   ocio-suffix=<str>            : Library suffix                     [""]
                                  (Ignored if ocio-name flag is set)
-  ocio-static-suffix=<str>     : Static library addition suffix     ["_s"]
   ocio-namespace=<str>         : Library namespace                  ["OpenColorIO"]
   ocio-use-sse2=0|1            : Use SSE2 instructions              [1]
   ocio-use-boost=0|1           : Use boost shared_ptr               [0]
   ocio-hide-inlines=0|1        : Hide inline functions              [1]""")
 
 excons.AddHelpTargets({"ocio-tools": "ociobakelut, ociocheck",
+                       "ocio-static": "OCIO static library",
+                       "ocio-shared": "OCIO shared library",
+                       "ocio-libs": "OCIO static and shared libraries",
                        "ocio": "ocio-shared, ocio-static, ocio-python, ociobakelut, ociocheck"})
+if OCIOName(True) == OCIOName(False):
+   excons.AddHelpTargets({OCIOName(True): "OCIO static and shared libraries"})
 
 targets = excons.DeclareTargets(env, projs)
 
 env.Depends(targets["ocio-shared"], InstallHeaders)
 env.Depends(targets["ocio-static"], InstallHeaders)
 env.Alias("ocio-tests", tester)
+env.Alias("ocio-libs", targets["ocio-shared"])
+env.Alias("ocio-libs", targets["ocio-static"])
 env.Alias("ocio", targets["ocio-shared"])
 env.Alias("ocio", targets["ocio-static"])
 env.Alias("ocio", targets["ocio-python"])
@@ -371,6 +367,4 @@ env.Alias("ocio-tools", targets["ociobakelut"])
 env.Alias("ocio-tools", targets["ociocheck"])
 
 Export("OCIOName OCIOPath RequireOCIO")
-
-Default(["ocio"])
 
