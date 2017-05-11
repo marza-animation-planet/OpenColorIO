@@ -326,6 +326,7 @@ projs = [
       "defs": defs + ["OCIO_UNIT_TEST", "OCIO_SOURCE_DIR=\"%s\"" % os.path.abspath(".").replace("\\", "/")],
       "cflags": cflags,
       "cppflags": cppflags,
+      "incdirs": libincdirs,
       "srcs": excons.glob("src/core/*.cpp") +
               excons.glob("src/core/md5/*.cpp") +
               excons.glob("src/core/pystring/*.cpp"),
