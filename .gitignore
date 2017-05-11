@@ -16,3 +16,6 @@ src/core_tests/ocio_core_tests.sh
 src/core_tests/ocio_core_tests.bat
 ext/*/
 /*_config.status
+*.automake.*
+*.cmake.*
+
