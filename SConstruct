@@ -108,7 +108,7 @@ def YamlCppDefines(static):
       return []
 
 def YamlCppEnv(env, static):
-   boost.Require(env)
+   boost.Require()(env)
 
 rv = excons.ExternalLibRequire("yamlcpp", libnameFunc=YamlCppDefaultName, definesFunc=YamlCppDefines, extraEnvFunc=YamlCppEnv)
 if not rv["require"]:
@@ -251,8 +251,8 @@ def RequireOCIO(env, static=True):
    env.Append(LIBPATH=[excons.OutputBaseDirectory() + "/lib"])
    excons.Link(env, OCIOPath(static), static=static, force=True, silent=True)
    if static:
-      RequireYamlCpp(env)
-      RequireTinyXml(env)
+      YamlCppRequire(env)
+      TinyXmlRequire(env)
    if ocio_use_boost:
       boost.Require()(env)
 
