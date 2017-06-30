@@ -1499,7 +1499,30 @@ OCIO_NAMESPACE_ENTER
                 }
                 else if(key == "search_path" || key == "resource_path")
                 {
-                    load(second, stringval);
+                    if (second.IsSequence())
+                    {
+                        std::vector<std::string> paths;
+                        load(second, paths);
+                        stringval = "";
+                        bool empty = true;
+                        for (size_t si=0; si<paths.size(); ++si)
+                        {
+                            if (!empty)
+                            {
+#ifdef _WIN32
+                                stringval += ";"; 
+#else
+                                stringval += ":";
+#endif
+                            }
+                            stringval += paths[si];
+                            empty = false;
+                        }
+                    }
+                    else
+                    {
+                       load(second, stringval);
+                    }
                     c->setSearchPath(stringval.c_str());
                 }
                 else if(key == "strictparsing")
