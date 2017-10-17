@@ -58,20 +58,20 @@ OCIO_NAMESPACE_ENTER
         const char * OCIO_CONFIG_ENVVAR = "OCIO";
         const char * OCIO_ACTIVE_DISPLAYS_ENVVAR = "OCIO_ACTIVE_DISPLAYS";
         const char * OCIO_ACTIVE_VIEWS_ENVVAR = "OCIO_ACTIVE_VIEWS";
-        
+
         enum Sanity
         {
             SANITY_UNKNOWN = 0,
             SANITY_SANE,
             SANITY_INSANE
         };
-        
+
         // These are the 709 primaries specified by the ASC.
         const float DEFAULT_LUMA_COEFF_R = 0.2126f;
         const float DEFAULT_LUMA_COEFF_G = 0.7152f;
         const float DEFAULT_LUMA_COEFF_B = 0.0722f;
-        
-        const char * INTERNAL_RAW_PROFILE = 
+
+        const char * INTERNAL_RAW_PROFILE =
         "ocio_profile_version: 1\n"
         "strictparsing: false\n"
         "roles:\n"
@@ -89,74 +89,72 @@ OCIO_NAMESPACE_ENTER
         "      allocation: uniform\n"
         "      description: 'A raw color space. Conversions to and from this space are no-ops.'\n";
     }
-    
-    
+
+
     ///////////////////////////////////////////////////////////////////////////
-    
+
     const char * GetVersion()
     {
         return OCIO_VERSION;
     }
-    
+
     int GetVersionHex()
     {
         return OCIO_VERSION_HEX;
     }
-    
+
     namespace
     {
         ConstConfigRcPtr g_currentConfig;
         Mutex g_currentConfigLock;
     }
-    
+
     ConstConfigRcPtr GetCurrentConfig()
     {
         AutoMutex lock(g_currentConfigLock);
-        
+
         if(!g_currentConfig)
         {
             g_currentConfig = Config::CreateFromEnv();
         }
-        
+
         return g_currentConfig;
     }
-    
+
     void SetCurrentConfig(const ConstConfigRcPtr & config)
     {
         AutoMutex lock(g_currentConfigLock);
-        
+
         g_currentConfig = config->createEditableCopy();
     }
-    
+
     namespace
     {
-    
+
     // Environment
-    const std::string LookupEnvironment(const StringMap & env,
+    const char* LookupEnvironment(const StringMap & env,
                                         const std::string & name)
     {
         StringMap::const_iterator iter = env.find(name);
         if(iter == env.end()) return "";
-        std::string var = iter->second;
-        return var;
+        return iter->second.c_str();
     }
-    
+
     // Roles
     // (lower case role name: colorspace name)
-    const std::string LookupRole(const StringMap & roles, const std::string & rolename)
+    const char* LookupRole(const StringMap & roles, const std::string & rolename)
     {
         StringMap::const_iterator iter = roles.find(pystring::lower(rolename));
         if(iter == roles.end()) return "";
-        std::string role = iter->second;
-        return role;
+        return iter->second.c_str();
     }
-    
-    
+
+
     void GetFileReferences(std::set<std::string> & files,
                            const ConstTransformRcPtr & transform)
     {
         if(!transform) return;
-        
+
         if(ConstGroupTransformRcPtr groupTransform = \
             DynamicPtrCast<const GroupTransform>(transform))
         {
@@ -171,12 +169,12 @@ OCIO_NAMESPACE_ENTER
             files.insert(fileTransform->getSrc());
         }
     }
-    
+
     void GetColorSpaceReferences(std::set<std::string> & colorSpaceNames,
                                  const ConstTransformRcPtr & transform)
     {
         if(!transform) return;
-        
+
         if(ConstGroupTransformRcPtr groupTransform = \
             DynamicPtrCast<const GroupTransform>(transform))
         {
@@ -203,14 +201,14 @@ OCIO_NAMESPACE_ENTER
             colorSpaceNames.insert(colorSpaceTransform->getDst());
         }
     }
-    
-    
+
+
     bool FindColorSpaceIndex(int * index,
                              const ColorSpaceVec & colorspaces,
                              const std::string & csname)
     {
         if(csname.empty()) return false;
-        
+
         std::string csnamelower = pystring::lower(csname);
         for(unsigned int i = 0; i < colorspaces.size(); ++i)
         {
@@ -220,12 +218,12 @@ OCIO_NAMESPACE_ENTER
                 return true;
             }
         }
-        
+
         return false;
     }
-        
+
     } // namespace
-    
+
     class Config::Impl
     {
     public:
@@ -235,137 +233,140 @@ OCIO_NAMESPACE_ENTER
         ColorSpaceVec colorspaces_;
         StringMap roles_;
         LookVec looksList_;
-        
+
         DisplayMap displays_;
         StringVec activeDisplays_;
         StringVec activeDisplaysEnvOverride_;
         StringVec activeViews_;
         StringVec activeViewsEnvOverride_;
-        
+
         mutable std::string activeDisplaysStr_;
         mutable std::string activeViewsStr_;
         mutable StringVec displayCache_;
-        
+
         // Misc
         std::vector<float> defaultLumaCoefs_;
         bool strictParsing_;
-        
+
         mutable Sanity sanity_;
         mutable std::string sanitytext_;
-        
+
         mutable Mutex cacheidMutex_;
         mutable StringMap cacheids_;
         mutable std::string cacheidnocontext_;
-        
+
         OCIOYaml io_;
-        
-        Impl() : 
+
+        Impl() :
             context_(Context::Create()),
             strictParsing_(true),
             sanity_(SANITY_UNKNOWN)
         {
             char* activeDisplays = std::getenv(OCIO_ACTIVE_DISPLAYS_ENVVAR);
             SplitStringEnvStyle(activeDisplaysEnvOverride_, activeDisplays);
-            
+
             char * activeViews = std::getenv(OCIO_ACTIVE_VIEWS_ENVVAR);
             SplitStringEnvStyle(activeViewsEnvOverride_, activeViews);
-            
+
             defaultLumaCoefs_.resize(3);
             defaultLumaCoefs_[0] = DEFAULT_LUMA_COEFF_R;
             defaultLumaCoefs_[1] = DEFAULT_LUMA_COEFF_G;
             defaultLumaCoefs_[2] = DEFAULT_LUMA_COEFF_B;
         }
-        
+
         ~Impl()
         {
-        
+
         }
-        
+
         Impl& operator= (const Impl & rhs)
         {
-            env_ = rhs.env_;
-            context_ = rhs.context_->createEditableCopy();
-            description_ = rhs.description_;
-            
-            // Deep copy the colorspaces
-            colorspaces_.clear();
-            colorspaces_.reserve(rhs.colorspaces_.size());
-            for(unsigned int i=0; i<rhs.colorspaces_.size(); ++i)
+            if(this!=&rhs)
             {
-                colorspaces_.push_back(rhs.colorspaces_[i]->createEditableCopy());
+                env_ = rhs.env_;
+                context_ = rhs.context_->createEditableCopy();
+                description_ = rhs.description_;
+
+                // Deep copy the colorspaces
+                colorspaces_.clear();
+                colorspaces_.reserve(rhs.colorspaces_.size());
+                for(unsigned int i=0; i<rhs.colorspaces_.size(); ++i)
+                {
+                    colorspaces_.push_back(rhs.colorspaces_[i]->createEditableCopy());
+                }
+
+                // Deep copy the looks
+                looksList_.clear();
+                looksList_.reserve(rhs.looksList_.size());
+                for(unsigned int i=0; i<rhs.looksList_.size(); ++i)
+                {
+                    looksList_.push_back(rhs.looksList_[i]->createEditableCopy());
+                }
+
+                // Assignment operator will suffice for these
+                roles_ = rhs.roles_;
+
+                displays_ = rhs.displays_;
+                activeDisplays_ = rhs.activeDisplays_;
+                activeViews_ = rhs.activeViews_;
+                activeViewsEnvOverride_ = rhs.activeViewsEnvOverride_;
+                activeDisplaysEnvOverride_ = rhs.activeDisplaysEnvOverride_;
+                activeDisplaysStr_ = rhs.activeDisplaysStr_;
+                displayCache_ = rhs.displayCache_;
+
+                defaultLumaCoefs_ = rhs.defaultLumaCoefs_;
+                strictParsing_ = rhs.strictParsing_;
+
+                sanity_ = rhs.sanity_;
+                sanitytext_ = rhs.sanitytext_;
+
+                cacheids_ = rhs.cacheids_;
+                cacheidnocontext_ = cacheidnocontext_;
             }
-            
-            // Deep copy the looks
-            looksList_.clear();
-            looksList_.reserve(rhs.looksList_.size());
-            for(unsigned int i=0; i<rhs.looksList_.size(); ++i)
-            {
-                looksList_.push_back(rhs.looksList_[i]->createEditableCopy());
-            }
-            
-            // Assignment operator will suffice for these
-            roles_ = rhs.roles_;
-            
-            displays_ = rhs.displays_;
-            activeDisplays_ = rhs.activeDisplays_;
-            activeViews_ = rhs.activeViews_;
-            activeViewsEnvOverride_ = rhs.activeViewsEnvOverride_;
-            activeDisplaysEnvOverride_ = rhs.activeDisplaysEnvOverride_;
-            activeDisplaysStr_ = rhs.activeDisplaysStr_;
-            displayCache_ = rhs.displayCache_;
-            
-            defaultLumaCoefs_ = rhs.defaultLumaCoefs_;
-            strictParsing_ = rhs.strictParsing_;
-            
-            sanity_ = rhs.sanity_;
-            sanitytext_ = rhs.sanitytext_;
-            
-            cacheids_ = rhs.cacheids_;
-            cacheidnocontext_ = cacheidnocontext_;
             return *this;
         }
-        
+
         // Any time you modify the state of the config, you must call this
         // to reset internal cache states.  You also should do this in a
         // thread safe manner by acquiring the cacheidMutex_;
         void resetCacheIDs();
-        
+
         // Get all internal transforms (to generate cacheIDs, validation, etc).
         // This currently crawls colorspaces + looks
         void getAllIntenalTransforms(ConstTransformVec & transformVec) const;
     };
-    
-    
+
+
     ///////////////////////////////////////////////////////////////////////////
-    
+
     ConfigRcPtr Config::Create()
     {
         return ConfigRcPtr(new Config(), &deleter);
     }
-    
+
     void Config::deleter(Config* c)
     {
         delete c;
     }
-    
+
     ConstConfigRcPtr Config::CreateFromEnv()
     {
         char* file = std::getenv(OCIO_CONFIG_ENVVAR);
         if(file) return CreateFromFile(file);
-        
+
         std::ostringstream os;
         os << "Color management disabled. ";
         os << "(Specify the $OCIO environment variable to enable.)";
         LogInfo(os.str());
-        
+
         std::istringstream istream;
         istream.str(INTERNAL_RAW_PROFILE);
-        
+
         ConfigRcPtr config = Config::Create();
         config->getImpl()->io_.open(istream, config);
         return config;
     }
-    
+
     ConstConfigRcPtr Config::CreateFromFile(const char * filename)
     {
         std::ifstream istream(filename);
@@ -375,41 +376,41 @@ OCIO_NAMESPACE_ENTER
             os << "' OCIO profile.";
             throw Exception (os.str().c_str());
         }
-        
+
         ConfigRcPtr config = Config::Create();
         config->getImpl()->io_.open(istream, config, filename);
         return config;
     }
-    
+
     ConstConfigRcPtr Config::CreateFromStream(std::istream & istream)
     {
         ConfigRcPtr config = Config::Create();
         config->getImpl()->io_.open(istream, config);
         return config;
     }
-    
+
     ///////////////////////////////////////////////////////////////////////////
-    
-    
-    
+
+
+
     Config::Config()
     : m_impl(new Config::Impl)
     {
     }
-    
+
     Config::~Config()
     {
         delete m_impl;
         m_impl = NULL;
     }
-    
+
     ConfigRcPtr Config::createEditableCopy() const
     {
         ConfigRcPtr config = Config::Create();
         *config->m_impl = *m_impl;
         return config;
     }
-    
+
     void Config::sanityCheck() const
     {
         if(getImpl()->sanity_ == SANITY_SANE) return;
@@ -417,14 +418,14 @@ OCIO_NAMESPACE_ENTER
         {
             throw Exception(getImpl()->sanitytext_.c_str());
         }
-        
+
         getImpl()->sanity_ = SANITY_INSANE;
         getImpl()->sanitytext_ = "";
-        
-        
+
+
         ///// COLORSPACES
         StringSet existingColorSpaces;
-        
+
         // Confirm all ColorSpaces are valid
         for(unsigned int i=0; i<getImpl()->colorspaces_.size(); ++i)
         {
@@ -436,7 +437,7 @@ OCIO_NAMESPACE_ENTER
                 getImpl()->sanitytext_ = os.str();
                 throw Exception(getImpl()->sanitytext_.c_str());
             }
-            
+
             const char * name = getImpl()->colorspaces_[i]->getName();
             if(!name || strlen(name) == 0)
             {
@@ -446,7 +447,7 @@ OCIO_NAMESPACE_ENTER
                 getImpl()->sanitytext_ = os.str();
                 throw Exception(getImpl()->sanitytext_.c_str());
             }
-            
+
             std::string namelower = pystring::lower(name);
             StringSet::const_iterator it = existingColorSpaces.find(namelower);
             if(it != existingColorSpaces.end())
@@ -458,10 +459,10 @@ OCIO_NAMESPACE_ENTER
                 getImpl()->sanitytext_ = os.str();
                 throw Exception(getImpl()->sanitytext_.c_str());
             }
-            
+
             existingColorSpaces.insert(namelower);
         }
-        
+
         // Confirm all roles are valid
         {
             for(StringMap::const_iterator iter = getImpl()->roles_.begin(),
@@ -478,7 +479,7 @@ OCIO_NAMESPACE_ENTER
                     getImpl()->sanitytext_ = os.str();
                     throw Exception(getImpl()->sanitytext_.c_str());
                 }
-                
+
                 // Confirm no name conflicts between colorspaces and roles
                 if(FindColorSpaceIndex(&csindex, getImpl()->colorspaces_, iter->first))
                 {
@@ -491,11 +492,11 @@ OCIO_NAMESPACE_ENTER
                 }
             }
         }
-        
+
         ///// DISPLAYS
-        
+
         int numviews = 0;
-        
+
         // Confirm all Displays transforms refer to colorspaces that exit
         for(DisplayMap::const_iterator iter = getImpl()->displays_.begin();
             iter != getImpl()->displays_.end();
@@ -512,7 +513,7 @@ OCIO_NAMESPACE_ENTER
                 getImpl()->sanitytext_ = os.str();
                 throw Exception(getImpl()->sanitytext_.c_str());
             }
-            
+
             for(unsigned int i=0; i<views.size(); ++i)
             {
                 if(views[i].name.empty() || views[i].colorspace.empty())
@@ -524,7 +525,7 @@ OCIO_NAMESPACE_ENTER
                     getImpl()->sanitytext_ = os.str();
                     throw Exception(getImpl()->sanitytext_.c_str());
                 }
-                
+
                 int csindex = -1;
                 if(!FindColorSpaceIndex(&csindex, getImpl()->colorspaces_, views[i].colorspace))
                 {
@@ -536,11 +537,11 @@ OCIO_NAMESPACE_ENTER
                     getImpl()->sanitytext_ = os.str();
                     throw Exception(getImpl()->sanitytext_.c_str());
                 }
-                
+
                 // Confirm looks references exist
                 LookParseResult looks;
                 const LookParseResult::Options & options = looks.parse(views[i].looks);
-                
+
                 for(unsigned int optionindex=0;
                     optionindex<options.size();
                     ++optionindex)
@@ -550,7 +551,7 @@ OCIO_NAMESPACE_ENTER
                         ++tokenindex)
                     {
                         std::string look = options[optionindex][tokenindex].name;
-                        
+
                         if(!look.empty() && !getLook(look.c_str()))
                         {
                             std::ostringstream os;
@@ -563,11 +564,11 @@ OCIO_NAMESPACE_ENTER
                         }
                     }
                 }
-                
+
                 ++numviews;
             }
         }
-        
+
         // Confirm at least one display entry exists.
         if(numviews == 0)
         {
@@ -577,19 +578,19 @@ OCIO_NAMESPACE_ENTER
             getImpl()->sanitytext_ = os.str();
             throw Exception(getImpl()->sanitytext_.c_str());
         }
-        
+
         // Confirm for all Transforms that reference internal colorspaces,
         // the named space exists
         {
             ConstTransformVec allTransforms;
             getImpl()->getAllIntenalTransforms(allTransforms);
-            
+
             std::set<std::string> colorSpaceNames;
             for(unsigned int i=0; i<colorSpaceNames.size(); ++i)
             {
                 GetColorSpaceReferences(colorSpaceNames, allTransforms[i]);
             }
-            
+
             for(std::set<std::string>::iterator iter = colorSpaceNames.begin();
                 iter != colorSpaceNames.end(); ++iter)
             {
@@ -605,9 +606,9 @@ OCIO_NAMESPACE_ENTER
                 }
             }
         }
-        
+
         ///// LOOKS
-        
+
         // For all looks, confirm the process space exists and the look is named
         for(unsigned int i=0; i<getImpl()->looksList_.size(); ++i)
         {
@@ -621,7 +622,7 @@ OCIO_NAMESPACE_ENTER
                 getImpl()->sanitytext_ = os.str();
                 throw Exception(getImpl()->sanitytext_.c_str());
             }
-            
+
             std::string processSpace = getImpl()->looksList_[i]->getProcessSpace();
             if(processSpace.empty())
             {
@@ -632,7 +633,7 @@ OCIO_NAMESPACE_ENTER
                 getImpl()->sanitytext_ = os.str();
                 throw Exception(getImpl()->sanitytext_.c_str());
             }
-            
+
             int csindex=0;
             if(!FindColorSpaceIndex(&csindex, getImpl()->colorspaces_, processSpace))
             {
@@ -645,36 +646,36 @@ OCIO_NAMESPACE_ENTER
                 throw Exception(getImpl()->sanitytext_.c_str());
             }
         }
-        
-        
-        
+
+
+
         // Everything is groovy.
         getImpl()->sanity_ = SANITY_SANE;
     }
-    
+
     ///////////////////////////////////////////////////////////////////////////
-    
+
     const char * Config::getDescription() const
     {
         return getImpl()->description_.c_str();
     }
-    
+
     void Config::setDescription(const char * description)
     {
         getImpl()->description_ = description;
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
-    
+
+
     // RESOURCES //////////////////////////////////////////////////////////////
-    
+
     ConstContextRcPtr Config::getCurrentContext() const
     {
         return getImpl()->context_;
     }
-    
+
     void Config::addEnvironmentVar(const char * name, const char * defaultValue)
     {
         if(defaultValue)
@@ -687,16 +688,16 @@ OCIO_NAMESPACE_ENTER
             StringMap::iterator iter = getImpl()->env_.find(std::string(name));
             if(iter != getImpl()->env_.end()) getImpl()->env_.erase(iter);
         }
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
+
     int Config::getNumEnvironmentVars() const
     {
         return static_cast<int>(getImpl()->env_.size());
     }
-    
+
     const char * Config::getEnvironmentVarNameByIndex(int index) const
     {
         if(index < 0 || index >= (int)getImpl()->env_.size()) return "";
@@ -704,87 +705,86 @@ OCIO_NAMESPACE_ENTER
         for(int i = 0; i < index; ++i) ++iter;
         return iter->first.c_str();
     }
-    
+
     const char * Config::getEnvironmentVarDefault(const char * name) const
     {
-        std::string var = LookupEnvironment(getImpl()->env_, name);
-        return var.c_str();
+        return LookupEnvironment(getImpl()->env_, name);
     }
-    
+
     void Config::clearEnvironmentVars()
     {
         getImpl()->env_.clear();
         getImpl()->context_->clearStringVars();
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
+
     void Config::setEnvironmentMode(EnvironmentMode mode)
     {
         getImpl()->context_->setEnvironmentMode(mode);
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
+
     EnvironmentMode Config::getEnvironmentMode() const
     {
         return getImpl()->context_->getEnvironmentMode();
     }
-    
+
     void Config::loadEnvironment()
     {
         getImpl()->context_->loadEnvironment();
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
+
     const char * Config::getSearchPath() const
     {
         return getImpl()->context_->getSearchPath();
     }
-    
+
     void Config::setSearchPath(const char * path)
     {
         getImpl()->context_->setSearchPath(path);
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
+
     const char * Config::getWorkingDir() const
     {
         return getImpl()->context_->getWorkingDir();
     }
-    
+
     void Config::setWorkingDir(const char * dirname)
     {
         getImpl()->context_->setWorkingDir(dirname);
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
-    
+
+
     ///////////////////////////////////////////////////////////////////////////
-    
+
     int Config::getNumColorSpaces() const
     {
         return static_cast<int>(getImpl()->colorspaces_.size());
     }
-    
+
     const char * Config::getColorSpaceNameByIndex(int index) const
     {
         if(index<0 || index >= (int)getImpl()->colorspaces_.size())
         {
             return "";
         }
-        
+
         return getImpl()->colorspaces_[index]->getName();
     }
-    
+
     ConstColorSpaceRcPtr Config::getColorSpace(const char * name) const
     {
         int index = getIndexForColorSpace(name);
@@ -792,27 +792,27 @@ OCIO_NAMESPACE_ENTER
         {
             return ColorSpaceRcPtr();
         }
-        
+
         return getImpl()->colorspaces_[index];
     }
-    
+
     int Config::getIndexForColorSpace(const char * name) const
     {
         int csindex = -1;
-        
+
         // Check to see if the name is a color space
         if( FindColorSpaceIndex(&csindex, getImpl()->colorspaces_, name) )
         {
             return csindex;
         }
-        
+
         // Check to see if the name is a role
-        std::string csname = LookupRole(getImpl()->roles_, name);
+        const char* csname = LookupRole(getImpl()->roles_, name);
         if( FindColorSpaceIndex(&csindex, getImpl()->colorspaces_, csname) )
         {
             return csindex;
         }
-        
+
         // Is a default role defined?
         // (And, are we allowed to use it)
         if(!getImpl()->strictParsing_)
@@ -823,18 +823,18 @@ OCIO_NAMESPACE_ENTER
                 return csindex;
             }
         }
-        
+
         return -1;
     }
-    
+
     void Config::addColorSpace(const ConstColorSpaceRcPtr & original)
     {
         ColorSpaceRcPtr cs = original->createEditableCopy();
-        
+
         std::string name = cs->getName();
         if(name.empty())
             throw Exception("Cannot addColorSpace with an empty name.");
-        
+
         // Check to see if the colorspace already exists
         int csindex = -1;
         if( FindColorSpaceIndex(&csindex, getImpl()->colorspaces_, name) )
@@ -846,49 +846,49 @@ OCIO_NAMESPACE_ENTER
             // Otherwise, add it
             getImpl()->colorspaces_.push_back( cs );
         }
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
+
     void Config::clearColorSpaces()
     {
         getImpl()->colorspaces_.clear();
     }
-    
-    
-    
-    
-    
-    
+
+
+
+
+
+
     const char * Config::parseColorSpaceFromString(const char * str) const
     {
         if(!str) return "";
-        
+
         // Search the entire filePath, including directory name (if provided)
         // convert the filename to lowercase.
         std::string fullstr = pystring::lower(std::string(str));
-        
+
         // See if it matches a lut name.
         // This is the position of the RIGHT end of the colorspace substring, not the left
         int rightMostColorPos=-1;
         std::string rightMostColorspace = "";
         int rightMostColorSpaceIndex = -1;
-        
+
         // Find the right-most occcurance within the string for each colorspace.
         for (unsigned int i=0; i<getImpl()->colorspaces_.size(); ++i)
         {
             std::string csname = pystring::lower(getImpl()->colorspaces_[i]->getName());
-            
+
             // find right-most extension matched in filename
             int colorspacePos = pystring::rfind(fullstr, csname);
             if(colorspacePos < 0)
                 continue;
-            
+
             // If we have found a match, move the pointer over to the right end of the substring
             // This will allow us to find the longest name that matches the rightmost colorspace
             colorspacePos += (int)csname.size();
-            
+
             if ( (colorspacePos > rightMostColorPos) ||
                  ((colorspacePos == rightMostColorPos) && (csname.size() > rightMostColorspace.size()))
                 )
@@ -898,17 +898,17 @@ OCIO_NAMESPACE_ENTER
                 rightMostColorSpaceIndex = i;
             }
         }
-        
+
         if(rightMostColorSpaceIndex>=0)
         {
             return getImpl()->colorspaces_[rightMostColorSpaceIndex]->getName();
         }
-        
+
         if(!getImpl()->strictParsing_)
         {
             // Is a default role defined?
-            std::string csname = LookupRole(getImpl()->roles_, ROLE_DEFAULT);
-            if(!csname.empty())
+            const char* csname = LookupRole(getImpl()->roles_, ROLE_DEFAULT);
+            if(csname && *csname)
             {
                 int csindex = -1;
                 if( FindColorSpaceIndex(&csindex, getImpl()->colorspaces_, csname) )
@@ -919,23 +919,23 @@ OCIO_NAMESPACE_ENTER
                 }
             }
         }
-        
+
         return "";
     }
-    
+
     bool Config::isStrictParsingEnabled() const
     {
         return getImpl()->strictParsing_;
     }
-    
+
     void Config::setStrictParsingEnabled(bool enabled)
     {
         getImpl()->strictParsing_ = enabled;
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
+
     // Roles
     void Config::setRole(const char * role, const char * colorSpaceName)
     {
@@ -953,21 +953,22 @@ OCIO_NAMESPACE_ENTER
                 getImpl()->roles_.erase(iter);
             }
         }
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
+
     int Config::getNumRoles() const
     {
         return static_cast<int>(getImpl()->roles_.size());
     }
-    
+
     bool Config::hasRole(const char * role) const
     {
-        return LookupRole(getImpl()->roles_, role) == "" ? false : true;
+        const char* rname = LookupRole(getImpl()->roles_, role);
+        return  rname && *rname;
     }
-    
+
     const char * Config::getRoleName(int index) const
     {
         if(index < 0 || index >= (int)getImpl()->roles_.size()) return "";
@@ -975,12 +976,12 @@ OCIO_NAMESPACE_ENTER
         for(int i = 0; i < index; ++i) ++iter;
         return iter->first.c_str();
     }
-    
+
     ///////////////////////////////////////////////////////////////////////////
     //
     // Display/View Registration
-    
-    
+
+
     const char * Config::getDefaultDisplay() const
     {
         if(getImpl()->displayCache_.empty())
@@ -990,9 +991,9 @@ OCIO_NAMESPACE_ENTER
                             getImpl()->activeDisplays_,
                             getImpl()->activeDisplaysEnvOverride_);
         }
-        
+
         int index = -1;
-        
+
         if(!getImpl()->activeDisplaysEnvOverride_.empty())
         {
             StringVec orderedDisplays = IntersectStringVecsCaseIgnore(getImpl()->activeDisplaysEnvOverride_,
@@ -1011,17 +1012,17 @@ OCIO_NAMESPACE_ENTER
                 index = FindInStringVecCaseIgnore(getImpl()->displayCache_, orderedDisplays[0]);
             }
         }
-        
+
         if(index >= 0)
         {
             return getImpl()->displayCache_[index].c_str();
         }
-        
+
         if(!getImpl()->displayCache_.empty())
         {
             return getImpl()->displayCache_[0].c_str();
         }
-        
+
         return "";
     }
 
@@ -1035,7 +1036,7 @@ OCIO_NAMESPACE_ENTER
                             getImpl()->activeDisplays_,
                             getImpl()->activeDisplaysEnvOverride_);
         }
-        
+
         return static_cast<int>(getImpl()->displayCache_.size());
     }
 
@@ -1048,15 +1049,15 @@ OCIO_NAMESPACE_ENTER
                             getImpl()->activeDisplays_,
                             getImpl()->activeDisplaysEnvOverride_);
         }
-        
+
         if(index>=0 || index < static_cast<int>(getImpl()->displayCache_.size()))
         {
             return getImpl()->displayCache_[index].c_str();
         }
-        
+
         return "";
     }
-    
+
     const char * Config::getDefaultView(const char * display) const
     {
         if(getImpl()->displayCache_.empty())
@@ -1066,22 +1067,22 @@ OCIO_NAMESPACE_ENTER
                             getImpl()->activeDisplays_,
                             getImpl()->activeDisplaysEnvOverride_);
         }
-        
+
         if(!display) return "";
-        
+
         DisplayMap::const_iterator iter = find_display_const(getImpl()->displays_, display);
         if(iter == getImpl()->displays_.end()) return "";
-        
+
         const ViewVec & views = iter->second;
-        
+
         StringVec masterViews;
         for(unsigned int i=0; i<views.size(); ++i)
         {
             masterViews.push_back(views[i].name);
         }
-        
+
         int index = -1;
-        
+
         if(!getImpl()->activeViewsEnvOverride_.empty())
         {
             StringVec orderedViews = IntersectStringVecsCaseIgnore(getImpl()->activeViewsEnvOverride_,
@@ -1100,17 +1101,17 @@ OCIO_NAMESPACE_ENTER
                 index = FindInStringVecCaseIgnore(masterViews, orderedViews[0]);
             }
         }
-        
+
         if(index >= 0)
         {
             return views[index].name.c_str();
         }
-        
+
         if(!views.empty())
         {
             return views[0].name.c_str();
         }
-        
+
         return "";
     }
 
@@ -1123,12 +1124,12 @@ OCIO_NAMESPACE_ENTER
                             getImpl()->activeDisplays_,
                             getImpl()->activeDisplaysEnvOverride_);
         }
-        
+
         if(!display) return 0;
-        
+
         DisplayMap::const_iterator iter = find_display_const(getImpl()->displays_, display);
         if(iter == getImpl()->displays_.end()) return 0;
-        
+
         const ViewVec & views = iter->second;
         return static_cast<int>(views.size());
     }
@@ -1142,12 +1143,12 @@ OCIO_NAMESPACE_ENTER
                             getImpl()->activeDisplays_,
                             getImpl()->activeDisplaysEnvOverride_);
         }
-        
+
         if(!display) return "";
-        
+
         DisplayMap::const_iterator iter = find_display_const(getImpl()->displays_, display);
         if(iter == getImpl()->displays_.end()) return "";
-        
+
         const ViewVec & views = iter->second;
         return views[index].name.c_str();
     }
@@ -1155,61 +1156,61 @@ OCIO_NAMESPACE_ENTER
     const char * Config::getDisplayColorSpaceName(const char * display, const char * view) const
     {
         if(!display || !view) return "";
-        
+
         DisplayMap::const_iterator iter = find_display_const(getImpl()->displays_, display);
         if(iter == getImpl()->displays_.end()) return "";
-        
+
         const ViewVec & views = iter->second;
         int index = find_view(views, view);
         if(index<0) return "";
-        
+
         return views[index].colorspace.c_str();
     }
-    
+
     const char * Config::getDisplayLooks(const char * display, const char * view) const
     {
         if(!display || !view) return "";
-        
+
         DisplayMap::const_iterator iter = find_display_const(getImpl()->displays_, display);
         if(iter == getImpl()->displays_.end()) return "";
-        
+
         const ViewVec & views = iter->second;
         int index = find_view(views, view);
         if(index<0) return "";
-        
+
         return views[index].looks.c_str();
     }
-    
+
     void Config::addDisplay(const char * display, const char * view,
                             const char * colorSpaceName, const char * lookName)
     {
-        
+
         if(!display || !view || !colorSpaceName || !lookName) return;
-        
+
         AddDisplay(getImpl()->displays_,
                    display, view, colorSpaceName, lookName);
         getImpl()->displayCache_.clear();
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
+
     void Config::clearDisplays()
     {
         getImpl()->displays_.clear();
         getImpl()->displayCache_.clear();
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
+
     void Config::setActiveDisplays(const char * displays)
     {
         getImpl()->activeDisplays_.clear();
         SplitStringEnvStyle(getImpl()->activeDisplays_, displays);
-        
+
         getImpl()->displayCache_.clear();
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
@@ -1219,14 +1220,14 @@ OCIO_NAMESPACE_ENTER
         getImpl()->activeDisplaysStr_ = JoinStringEnvStyle(getImpl()->activeDisplays_);
         return getImpl()->activeDisplaysStr_.c_str();
     }
-    
+
     void Config::setActiveViews(const char * views)
     {
         getImpl()->activeViews_.clear();
         SplitStringEnvStyle(getImpl()->activeViews_, views);
-        
+
         getImpl()->displayCache_.clear();
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
@@ -1236,35 +1237,35 @@ OCIO_NAMESPACE_ENTER
         getImpl()->activeViewsStr_ = JoinStringEnvStyle(getImpl()->activeViews_);
         return getImpl()->activeViewsStr_.c_str();
     }
-    
+
     ///////////////////////////////////////////////////////////////////////////
-    
-    
+
+
     void Config::getDefaultLumaCoefs(float * c3) const
     {
         memcpy(c3, &getImpl()->defaultLumaCoefs_[0], 3*sizeof(float));
     }
-    
+
     void Config::setDefaultLumaCoefs(const float * c3)
     {
         memcpy(&getImpl()->defaultLumaCoefs_[0], c3, 3*sizeof(float));
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
-    
-    
-    
+
+
+
+
     ///////////////////////////////////////////////////////////////////////////
-    
-    
-    
-    
+
+
+
+
     ConstLookRcPtr Config::getLook(const char * name) const
     {
         std::string namelower = pystring::lower(name);
-        
+
         for(unsigned int i=0; i<getImpl()->looksList_.size(); ++i)
         {
             if(pystring::lower(getImpl()->looksList_[i]->getName()) == namelower)
@@ -1272,33 +1273,33 @@ OCIO_NAMESPACE_ENTER
                 return getImpl()->looksList_[i];
             }
         }
-        
+
         return ConstLookRcPtr();
     }
-    
+
     int Config::getNumLooks() const
     {
         return static_cast<int>(getImpl()->looksList_.size());
     }
-    
+
     const char * Config::getLookNameByIndex(int index) const
     {
         if(index<0 || index>=static_cast<int>(getImpl()->looksList_.size()))
         {
             return "";
         }
-        
+
         return getImpl()->looksList_[index]->getName();
     }
-    
+
     void Config::addLook(const ConstLookRcPtr & look)
     {
         std::string name = look->getName();
         if(name.empty())
             throw Exception("Cannot addLook with an empty name.");
-        
+
         std::string namelower = pystring::lower(name);
-        
+
         // If the look exists, replace it
         for(unsigned int i=0; i<getImpl()->looksList_.size(); ++i)
         {
@@ -1308,33 +1309,33 @@ OCIO_NAMESPACE_ENTER
                 return;
             }
         }
-        
+
         // Otherwise, add it
         getImpl()->looksList_.push_back(look->createEditableCopy());
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
+
     void Config::clearLooks()
     {
         getImpl()->looksList_.clear();
-        
+
         AutoMutex lock(getImpl()->cacheidMutex_);
         getImpl()->resetCacheIDs();
     }
-    
+
     ///////////////////////////////////////////////////////////////////////////
-    
-    
-    
+
+
+
     ConstProcessorRcPtr Config::getProcessor(const ConstColorSpaceRcPtr & src,
                                              const ConstColorSpaceRcPtr & dst) const
     {
         ConstContextRcPtr context = getCurrentContext();
         return getProcessor(context, src, dst);
     }
-    
+
     ConstProcessorRcPtr Config::getProcessor(const ConstContextRcPtr & context,
                                              const ConstColorSpaceRcPtr & src,
                                              const ConstColorSpaceRcPtr & dst) const
@@ -1347,20 +1348,20 @@ OCIO_NAMESPACE_ENTER
         {
             throw Exception("Config::GetProcessor failed. Destination colorspace is null.");
         }
-        
+
         ProcessorRcPtr processor = Processor::Create();
         processor->getImpl()->addColorSpaceConversion(*this, context, src, dst);
         processor->getImpl()->finalize();
         return processor;
     }
-    
+
     ConstProcessorRcPtr Config::getProcessor(const char * srcName,
                                              const char * dstName) const
     {
         ConstContextRcPtr context = getCurrentContext();
         return getProcessor(context, srcName, dstName);
     }
-    
+
     //! Names can be colorspace name or role name
     ConstProcessorRcPtr Config::getProcessor(const ConstContextRcPtr & context,
                                              const char * srcName,
@@ -1373,7 +1374,7 @@ OCIO_NAMESPACE_ENTER
             os << "Could not find colorspace '" << srcName << "'.";
             throw Exception(os.str().c_str());
         }
-        
+
         ConstColorSpaceRcPtr dst = getColorSpace(dstName);
         if(!dst)
         {
@@ -1381,24 +1382,24 @@ OCIO_NAMESPACE_ENTER
             os << "Could not find colorspace '" << dstName << "'.";
             throw Exception(os.str().c_str());
         }
-        
+
         return getProcessor(context, src, dst);
     }
-    
-    
+
+
     ConstProcessorRcPtr Config::getProcessor(const ConstTransformRcPtr& transform) const
     {
         return getProcessor(transform, TRANSFORM_DIR_FORWARD);
     }
-    
-    
+
+
     ConstProcessorRcPtr Config::getProcessor(const ConstTransformRcPtr& transform,
                                              TransformDirection direction) const
     {
         ConstContextRcPtr context = getCurrentContext();
         return getProcessor(context, transform, direction);
     }
-    
+
     ConstProcessorRcPtr Config::getProcessor(const ConstContextRcPtr & context,
                                              const ConstTransformRcPtr& transform,
                                              TransformDirection direction) const
@@ -1408,35 +1409,35 @@ OCIO_NAMESPACE_ENTER
         processor->getImpl()->finalize();
         return processor;
     }
-    
+
     std::ostream& operator<< (std::ostream& os, const Config& config)
     {
         config.serialize(os);
         return os;
     }
-    
+
     ///////////////////////////////////////////////////////////////////////////
     //  CacheID
-    
+
     const char * Config::getCacheID() const
     {
         return getCacheID(getCurrentContext());
     }
-    
+
     const char * Config::getCacheID(const ConstContextRcPtr & context) const
     {
         AutoMutex lock(getImpl()->cacheidMutex_);
-        
+
         // A null context will use the empty cacheid
         std::string contextcacheid = "";
         if(context) contextcacheid = context->getCacheID();
-        
+
         StringMap::const_iterator cacheiditer = getImpl()->cacheids_.find(contextcacheid);
         if(cacheiditer != getImpl()->cacheids_.end())
         {
             return cacheiditer->second.c_str();
         }
-        
+
         // Include the hash of the yaml config serialization
         if(getImpl()->cacheidnocontext_.empty())
         {
@@ -1445,28 +1446,28 @@ OCIO_NAMESPACE_ENTER
             std::string fullstr = cacheid.str();
             getImpl()->cacheidnocontext_ = CacheIDHash(fullstr.c_str(), (int)fullstr.size());
         }
-        
+
         // Also include all file references, using the context (if specified)
         std::string fileReferencesFashHash = "";
         if(context)
         {
             std::ostringstream filehash;
-            
+
             ConstTransformVec allTransforms;
             getImpl()->getAllIntenalTransforms(allTransforms);
-            
+
             std::set<std::string> files;
             for(unsigned int i=0; i<allTransforms.size(); ++i)
             {
                 GetFileReferences(files, allTransforms[i]);
             }
-            
+
             for(std::set<std::string>::iterator iter = files.begin();
                 iter != files.end(); ++iter)
             {
                 if(iter->empty()) continue;
                 filehash << *iter << "=";
-                
+
                 try
                 {
                     std::string resolvedLocation = context->resolveFileLocation(iter->c_str());
@@ -1478,19 +1479,19 @@ OCIO_NAMESPACE_ENTER
                     continue;
                 }
             }
-            
+
             std::string fullstr = filehash.str();
             fileReferencesFashHash = CacheIDHash(fullstr.c_str(), (int)fullstr.size());
         }
-        
+
         getImpl()->cacheids_[contextcacheid] = getImpl()->cacheidnocontext_ + ":" + fileReferencesFashHash;
         return getImpl()->cacheids_[contextcacheid].c_str();
     }
-    
-    
+
+
     ///////////////////////////////////////////////////////////////////////////
     //  Serialization
-    
+
     void Config::serialize(std::ostream& os) const
     {
         try
@@ -1504,7 +1505,7 @@ OCIO_NAMESPACE_ENTER
             throw Exception(error.str().c_str());
         }
     }
-    
+
     void Config::Impl::resetCacheIDs()
     {
         cacheids_.clear();
@@ -1512,7 +1513,7 @@ OCIO_NAMESPACE_ENTER
         sanity_ = SANITY_UNKNOWN;
         sanitytext_ = "";
     }
-    
+
     void Config::Impl::getAllIntenalTransforms(ConstTransformVec & transformVec) const
     {
         // Grab all transforms from the ColorSpaces
@@ -1523,7 +1524,7 @@ OCIO_NAMESPACE_ENTER
             if(colorspaces_[i]->getTransform(COLORSPACE_DIR_FROM_REFERENCE))
                 transformVec.push_back(colorspaces_[i]->getTransform(COLORSPACE_DIR_FROM_REFERENCE));
         }
-        
+
         // Grab all transforms from the Looks
         for(unsigned int i=0; i<looksList_.size(); ++i)
         {
@@ -1532,7 +1533,7 @@ OCIO_NAMESPACE_ENTER
             if(looksList_[i]->getInverseTransform())
                 transformVec.push_back(looksList_[i]->getInverseTransform());
         }
-    
+
     }
 }
 OCIO_NAMESPACE_EXIT
@@ -1550,58 +1551,58 @@ namespace OCIO = OCIO_NAMESPACE;
 #if 0
 OIIO_ADD_TEST(Config, test_searchpath_filesystem)
 {
-    
+
     OCIO::EnvMap env = OCIO::GetEnvMap();
     std::string OCIO_TEST_AREA("$OCIO_TEST_AREA");
     EnvExpand(&OCIO_TEST_AREA, &env);
-    
+
     OCIO::ConfigRcPtr config = OCIO::Config::Create();
-    
+
     // basic get/set/expand
     config->setSearchPath("."
                           ":$OCIO_TEST1"
                           ":/$OCIO_JOB/${OCIO_SEQ}/$OCIO_SHOT/ocio");
-    
+
     OIIO_CHECK_ASSERT(strcmp(config->getSearchPath(),
         ".:$OCIO_TEST1:/$OCIO_JOB/${OCIO_SEQ}/$OCIO_SHOT/ocio") == 0);
     OIIO_CHECK_ASSERT(strcmp(config->getSearchPath(true),
         ".:foobar:/meatballs/cheesecake/mb-cc-001/ocio") == 0);
-    
+
     // find some files
     config->setSearchPath(".."
                           ":$OCIO_TEST1"
                           ":${OCIO_TEST_AREA}/test_search/one"
                           ":$OCIO_TEST_AREA/test_search/two");
-    
+
     // setup for search test
     std::string base_dir("$OCIO_TEST_AREA/test_search/");
     EnvExpand(&base_dir, &env);
     mkdir(base_dir.c_str(), 0777);
-    
+
     std::string one_dir("$OCIO_TEST_AREA/test_search/one/");
     EnvExpand(&one_dir, &env);
     mkdir(one_dir.c_str(), 0777);
-    
+
     std::string two_dir("$OCIO_TEST_AREA/test_search/two/");
     EnvExpand(&two_dir, &env);
     mkdir(two_dir.c_str(), 0777);
-    
+
     std::string lut1(one_dir+"somelut1.lut");
     std::ofstream somelut1(lut1.c_str());
     somelut1.close();
-    
+
     std::string lut2(two_dir+"somelut2.lut");
     std::ofstream somelut2(lut2.c_str());
     somelut2.close();
-    
+
     std::string lut3(two_dir+"somelut3.lut");
     std::ofstream somelut3(lut3.c_str());
     somelut3.close();
-    
+
     std::string lutdotdot(OCIO_TEST_AREA+"/lutdotdot.lut");
     std::ofstream somelutdotdot(lutdotdot.c_str());
     somelutdotdot.close();
-    
+
     // basic search test
     OIIO_CHECK_ASSERT(strcmp(config->findFile("somelut1.lut"),
         lut1.c_str()) == 0);
@@ -1611,7 +1612,7 @@ OIIO_ADD_TEST(Config, test_searchpath_filesystem)
         lut3.c_str()) == 0);
     OIIO_CHECK_ASSERT(strcmp(config->findFile("lutdotdot.lut"),
         lutdotdot.c_str()) == 0);
-    
+
 }
 #endif
 
@@ -1624,7 +1625,7 @@ OIIO_ADD_TEST(Config, InternalRawProfile)
 
 OIIO_ADD_TEST(Config, SimpleConfig)
 {
-    
+
     std::string SIMPLE_PROFILE =
     "ocio_profile_version: 1\n"
     "resource_path: luts\n"
@@ -1689,7 +1690,7 @@ OIIO_ADD_TEST(Config, SimpleConfig)
     "            power: [1, 1, 1]\n"
     "            saturation: 1\n"
     "\n";
-    
+
     std::istringstream is;
     is.str(SIMPLE_PROFILE);
     OCIO::ConstConfigRcPtr config;
@@ -1698,7 +1699,7 @@ OIIO_ADD_TEST(Config, SimpleConfig)
 
 OIIO_ADD_TEST(Config, Roles)
 {
-    
+
     std::string SIMPLE_PROFILE =
     "ocio_profile_version: 1\n"
     "strictparsing: false\n"
@@ -1714,29 +1715,29 @@ OIIO_ADD_TEST(Config, Roles)
     "  - !<ColorSpace>\n"
     "      name: lgh\n"
     "\n";
-    
+
     std::istringstream is;
     is.str(SIMPLE_PROFILE);
     OCIO::ConstConfigRcPtr config;
     OIIO_CHECK_NO_THOW(config = OCIO::Config::CreateFromStream(is));
-    
+
     OIIO_CHECK_EQUAL(config->getNumRoles(), 3);
-    
+
     OIIO_CHECK_ASSERT(config->hasRole("compositing_log") == true);
     OIIO_CHECK_ASSERT(config->hasRole("cheese") == false);
     OIIO_CHECK_ASSERT(config->hasRole("") == false);
-    
+
     OIIO_CHECK_ASSERT(strcmp(config->getRoleName(2), "scene_linear") == 0);
     OIIO_CHECK_ASSERT(strcmp(config->getRoleName(0), "compositing_log") == 0);
     OIIO_CHECK_ASSERT(strcmp(config->getRoleName(1), "default") == 0);
     OIIO_CHECK_ASSERT(strcmp(config->getRoleName(10), "") == 0);
     OIIO_CHECK_ASSERT(strcmp(config->getRoleName(-4), "") == 0);
-    
+
 }
 
 OIIO_ADD_TEST(Config, Serialize)
 {
-    
+
     OCIO::ConfigRcPtr config = OCIO::Config::Create();
     {
         OCIO::ColorSpaceRcPtr cs = OCIO::ColorSpace::Create();
@@ -1762,15 +1763,15 @@ OIIO_ADD_TEST(Config, Serialize)
         config->addColorSpace(cs);
         config->setRole( OCIO::ROLE_COMPOSITING_LOG, cs->getName() );
     }
-    
+
     // for testing
     //std::ofstream outfile("/tmp/test.ocio");
     //config->serialize(outfile);
     //outfile.close();
-    
+
     std::ostringstream os;
     config->serialize(os);
-    
+
     std::string PROFILE_OUT =
     "ocio_profile_version: 1\n"
     "\n"
@@ -1809,12 +1810,12 @@ OIIO_ADD_TEST(Config, Serialize)
     "    to_reference: !<GroupTransform>\n"
     "      children:\n"
     "        - !<ExponentTransform> {value: [1, 1, 1, 1]}\n";
-    
+
     std::vector<std::string> osvec;
     OCIO::pystring::splitlines(os.str(), osvec);
     std::vector<std::string> PROFILE_OUTvec;
     OCIO::pystring::splitlines(PROFILE_OUT, PROFILE_OUTvec);
-    
+
     OIIO_CHECK_EQUAL(osvec.size(), PROFILE_OUTvec.size());
     for(unsigned int i = 0; i < PROFILE_OUTvec.size(); ++i)
         OIIO_CHECK_EQUAL(osvec[i], PROFILE_OUTvec[i]);
@@ -1838,13 +1839,13 @@ OIIO_ADD_TEST(Config, SanityCheck)
     "  sRGB:\n"
     "  - !<View> {name: Raw, colorspace: raw}\n"
     "\n";
-    
+
     std::istringstream is;
     is.str(SIMPLE_PROFILE);
     OCIO::ConstConfigRcPtr config;
     OIIO_CHECK_THOW(config = OCIO::Config::CreateFromStream(is), OCIO::Exception);
     }
-    
+
     {
     std::string SIMPLE_PROFILE =
     "ocio_profile_version: 1\n"
@@ -1858,12 +1859,12 @@ OIIO_ADD_TEST(Config, SanityCheck)
     "  sRGB:\n"
     "  - !<View> {name: Raw, colorspace: raw}\n"
     "\n";
-    
+
     std::istringstream is;
     is.str(SIMPLE_PROFILE);
     OCIO::ConstConfigRcPtr config;
     OIIO_CHECK_NO_THOW(config = OCIO::Config::CreateFromStream(is));
-    
+
     OIIO_CHECK_NO_THOW(config->sanityCheck());
     }
 }
@@ -1890,7 +1891,7 @@ OIIO_ADD_TEST(Config, EnvCheck)
     "  sRGB:\n"
     "  - !<View> {name: Raw, colorspace: raw}\n"
     "\n";
-    
+
     std::string SIMPLE_PROFILE2 =
     "ocio_profile_version: 1\n"
     "colorspaces:\n"
@@ -1903,13 +1904,13 @@ OIIO_ADD_TEST(Config, EnvCheck)
     "  sRGB:\n"
     "  - !<View> {name: Raw, colorspace: raw}\n"
     "\n";
-    
-    
+
+
     std::string test("SHOW=bar");
     putenv((char *)test.c_str());
     std::string test2("TASK=lighting");
     putenv((char *)test2.c_str());
-    
+
     std::istringstream is;
     is.str(SIMPLE_PROFILE);
     OCIO::ConstConfigRcPtr config;
@@ -1920,11 +1921,11 @@ OIIO_ADD_TEST(Config, EnvCheck)
     OIIO_CHECK_ASSERT(strcmp(config->getCurrentContext()->resolveStringVar("${SHOW}"),
         "bar") == 0);
     OIIO_CHECK_ASSERT(strcmp(config->getEnvironmentVarDefault("SHOW"), "super") == 0);
-    
+
     OCIO::ConfigRcPtr edit = config->createEditableCopy();
     edit->clearEnvironmentVars();
     OIIO_CHECK_EQUAL(edit->getNumEnvironmentVars(), 0);
-    
+
     edit->addEnvironmentVar("testing", "dupvar");
     edit->addEnvironmentVar("testing", "dupvar");
     edit->addEnvironmentVar("foobar", "testing");
@@ -1934,13 +1935,13 @@ OIIO_ADD_TEST(Config, EnvCheck)
     edit->addEnvironmentVar("foobar", NULL); // remove
     OIIO_CHECK_EQUAL(edit->getNumEnvironmentVars(), 2);
     edit->clearEnvironmentVars();
-    
+
     edit->addEnvironmentVar("SHOW", "super");
     edit->addEnvironmentVar("SHOT", "test");
     edit->addEnvironmentVar("SEQ", "foo");
     edit->addEnvironmentVar("test", "bar${cheese}");
     edit->addEnvironmentVar("cheese", "chedder");
-    
+
     //Test
     OCIO::LoggingLevel loglevel = OCIO::GetLoggingLevel();
     OCIO::SetLoggingLevel(OCIO::LOGGING_LEVEL_DEBUG);
@@ -1950,11 +1951,11 @@ OIIO_ADD_TEST(Config, EnvCheck)
     OIIO_CHECK_ASSERT(strcmp(noenv->getCurrentContext()->resolveStringVar("${TASK}"),
         "lighting") == 0);
     OCIO::SetLoggingLevel(loglevel);
-    
+
     OIIO_CHECK_EQUAL(edit->getEnvironmentMode(), OCIO::ENV_ENVIRONMENT_LOAD_PREDEFINED);
     edit->setEnvironmentMode(OCIO::ENV_ENVIRONMENT_LOAD_ALL);
     OIIO_CHECK_EQUAL(edit->getEnvironmentMode(), OCIO::ENV_ENVIRONMENT_LOAD_ALL);
-    
+
     }
 }
 

@@ -156,8 +156,8 @@ OCIO_NAMESPACE_ENTER
             md5_byte_t digest[16];
             
             md5_init(&state);
-            md5_append(&state, (const md5_byte_t *)from_min, 3*sizeof(float));
-            md5_append(&state, (const md5_byte_t *)from_max, 3*sizeof(float));
+            md5_append(&state, (const md5_byte_t *)from_min, (int)(3*sizeof(float)));
+            md5_append(&state, (const md5_byte_t *)from_max, (int)(3*sizeof(float)));
             
             for(int i=0; i<3; ++i)
             {
@@ -786,9 +786,9 @@ OIIO_ADD_TEST(Lut1DOp, ExtrapolationErrors)
     // Simple y=x+0.1 LUT
     for(int c=0; c<3; ++c)
     {
-        lut->luts[c].push_back(0.1);
-        lut->luts[c].push_back(0.6);
-        lut->luts[c].push_back(1.1);
+        lut->luts[c].push_back(0.1f);
+        lut->luts[c].push_back(0.6f);
+        lut->luts[c].push_back(1.1f);
     }
 
     lut->maxerror = 1e-5f;
@@ -807,7 +807,7 @@ OIIO_ADD_TEST(Lut1DOp, ExtrapolationErrors)
                                                    1.1f, 1.1f, 1.1f, 0.0f,
                                                    1.1f, 1.1f, 0.6f, 0.0f };
     OCIO::Lut1D_Linear(inputBuffer_linearforward, PIXELS, *lut);
-    for(int i=0; i <sizeof(inputBuffer_linearforward)/sizeof(inputBuffer_linearforward[0]); ++i)
+    for(size_t i=0; i <sizeof(inputBuffer_linearforward)/sizeof(inputBuffer_linearforward[0]); ++i)
     {
         OIIO_CHECK_CLOSE(inputBuffer_linearforward[i], outputBuffer_linearforward[i], 1e-5f);
     }

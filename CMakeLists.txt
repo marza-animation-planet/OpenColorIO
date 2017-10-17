@@ -25,7 +25,7 @@ option(OCIO_BUILD_JNIGLUE "Specify whether to build java bindings" OFF)
 option(OCIO_STATIC_JNIGLUE "Specify whether to statically link ocio to the java bindings" ON)
 
 option(OCIO_USE_SSE "Specify whether to enable SSE CPU performance optimizations" ON)
-option(OCIO_INLINES_HIDDEN "Specify whether to build with -fvisibility-inlines-hidden" ON)
+option(OCIO_INLINES_HIDDEN "Specify whether to build with -fvisibility-inlines-hidden" UNIX)
 
 # Use boost's shared_ptr by default on Windows (as <VS2010 doesn't have it),
 # Use std::tr1::shared_ptr by default on other platforms
@@ -139,24 +139,18 @@ if(CMAKE_COMPILER_IS_GNUCXX)
     # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pedantic")
 endif(CMAKE_COMPILER_IS_GNUCXX)
 
-if(WIN32)
-    if(PYTHON_VERSION AND PYTHON_INCLUDE AND PYTHON_LIB)
-        set(EXTDIST_PYTHONPATH ${PYTHON_LIB}/python${PYTHON_VARIANT_PATH}/site-packages)
-        set(PYTHONPATH ${EXTDIST_PYTHONPATH};$ENV{PYTHONPATH})
-        set(PYTHON_OK YES)
-        message(STATUS "Setting Python path to: ${PYTHONPATH}")
-    endif()
-else()
-    # Find Python, used for (possibly) building pyglue, and now to
-    # construct the external project path
-    OCIOFindPython()
+###############################################################################
+### Python ###
 
-    set(EXTDIST_ROOT ${CMAKE_BINARY_DIR}/ext/dist)
-    set(EXTDIST_BINPATH ${EXTDIST_ROOT}/bin)
-    if(PYTHON_OK)
-        set(EXTDIST_PYTHONPATH ${EXTDIST_ROOT}/lib/python${PYTHON_VERSION}/site-packages)
-        set(PYTHONPATH ${EXTDIST_PYTHONPATH}:$ENV{PYTHONPATH})
-    endif()
+OCIOFindPython()
+
+# Find Python, used for (possibly) building pyglue, and now to
+# construct the external project path
+set(EXTDIST_ROOT ${CMAKE_BINARY_DIR}/ext/dist)
+set(EXTDIST_BINPATH ${EXTDIST_ROOT}/bin)
+if(PYTHON_OK)
+    set(EXTDIST_PYTHONPATH ${EXTDIST_ROOT}/${PYTHON_VARIANT_PATH})
+    set(PYTHONPATH ${EXTDIST_PYTHONPATH}:$ENV{PYTHONPATH})
 endif()
 
 messageonce("Setting EXTDIST_BINPATH: ${EXTDIST_BINPATH}")
@@ -186,6 +180,7 @@ else(USE_EXTERNAL_TINYXML)
     if(CMAKE_TOOLCHAIN_FILE)
         set(TINYXML_CMAKE_ARGS ${TINYXML_CMAKE_ARGS} -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
     endif()
+    set(TINYXML_CMAKE_ARGS ${TINYXML_CMAKE_ARGS} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
     set(TINYXML_ZIPFILE     "${CMAKE_SOURCE_DIR}/ext/tinyxml_${TINYXML_VERSION}.tar.gz")
     set(TINYXML_PATCHFILE   "${CMAKE_SOURCE_DIR}/ext/tinyxml_${TINYXML_VERSION}.patch")
     set(TINYXML_SOURCE_DIR  "${CMAKE_BINARY_DIR}/ext")
@@ -223,7 +218,7 @@ else(USE_EXTERNAL_TINYXML)
         ExternalProject_Add(tinyxml
             URL             ${TINYXML_ZIPFILE}
             SOURCE_DIR      ${TINYXML_SOURCE_DIR}/tinyxml
-            PATCH_COMMAND   ${GIT_EXECUTABLE} apply ${TINYXML_PATCHFILE}
+            PATCH_COMMAND   ${GIT_EXECUTABLE} apply --ignore-whitespace ${TINYXML_PATCHFILE}
             BINARY_DIR      ext/build/tinyxml
             INSTALL_DIR     ext/dist
             CMAKE_ARGS      ${TINYXML_CMAKE_ARGS}
@@ -290,12 +285,13 @@ if(USE_EXTERNAL_YAML)
     else(YAML_CPP_FOUND)
         message(FATAL_ERROR "ERROR: System yaml-cpp library was not found. Make sure the library is installed and the pkg-config file exists.")
     endif(YAML_CPP_FOUND)
-else(USE_EXTERNAL_YAML) ## provide 2 way to build this dependency
+else(USE_EXTERNAL_YAML) ## provide 2 ways to build this dependency
     set(YAML_CPP_VERSION 0.3.0)
     set(YAML_CPP_CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${PROJECT_BINARY_DIR}/ext/dist -DYAML_CPP_BUILD_TOOLS:BOOL=FALSE -DOCIO_INLINES_HIDDEN:BOOL=${OCIO_INLINES_HIDDEN})
     if(CMAKE_TOOLCHAIN_FILE)
         set(YAML_CPP_CMAKE_ARGS ${YAML_CPP_CMAKE_ARGS} -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
     endif()
+    set(YAML_CPP_CMAKE_ARGS ${YAML_CPP_CMAKE_ARGS} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
     set(YAML_CPP_ZIPFILE        "${CMAKE_SOURCE_DIR}/ext/yaml-cpp-${YAML_CPP_VERSION}.tar.gz")
     set(YAML_CPP_SOURCE_DIR     "${CMAKE_BINARY_DIR}/ext")
     set(YAML_CPP_PATCHFILE      "${CMAKE_SOURCE_DIR}/ext/yaml-cpp-${YAML_CPP_VERSION}.patch")
@@ -336,7 +332,7 @@ else(USE_EXTERNAL_YAML) ## provide 2 way to build this dependency
         ExternalProject_Add(YAML_CPP_LOCAL
             URL             ${YAML_CPP_ZIPFILE}
             SOURCE_DIR      ${YAML_CPP_SOURCE_DIR}/yaml-cpp
-            PATCH_COMMAND   ${GIT_EXECUTABLE} apply ${YAML_CPP_PATCHFILE}
+            PATCH_COMMAND   ${GIT_EXECUTABLE} apply --ignore-whitespace ${YAML_CPP_PATCHFILE}
             BINARY_DIR      ext/build/yaml-cpp
             INSTALL_DIR     ext/dist
             CMAKE_ARGS      ${YAML_CPP_CMAKE_ARGS}
@@ -367,12 +363,20 @@ endif()
 ### Externals ###
 
 set(EXTERNAL_INCLUDE_DIRS ${EXTERNAL_INCLUDE_DIRS} ${PROJECT_BINARY_DIR}/ext/dist/include)
+
 ## maybe better to separate too general COMPILE_FLAGS (which are compiler specific) and split with specific COMPILE_DEFINITIONS
 ## so we can easily export it from cmake for the installation and be used easily in child projects ?
-set(EXTERNAL_COMPILE_FLAGS "-DTIXML_USE_STL ${YAML_CPP_COMPILE_FLAGS} -fPIC -fvisibility=hidden")
-if(OCIO_INLINES_HIDDEN)
-    set(EXTERNAL_COMPILE_FLAGS "${EXTERNAL_COMPILE_FLAGS} -fvisibility-inlines-hidden")
+
+if(UNIX)
+    set(GCC_COMPILE_FLAGS "${GCC_COMPILE_FLAGS} -fPIC -fvisibility=hidden")
+    if(OCIO_INLINES_HIDDEN)
+        set(GCC_COMPILE_FLAGS "${GCC_COMPILE_FLAGS} -fvisibility-inlines-hidden")
+    endif()
+else()
+    set(OCIO_INLINES_HIDDEN OFF)
 endif()
+
+set(EXTERNAL_COMPILE_FLAGS "-DTIXML_USE_STL ${YAML_CPP_COMPILE_FLAGS} ${GCC_COMPILE_FLAGS}")
 
 set(EXTERNAL_LINK_FLAGS "")
 set(EXTERNAL_LIBRARY_DIRS ${PROJECT_BINARY_DIR}/ext/dist/lib)
@@ -494,7 +498,7 @@ endif()
 ###############################################################################
 ### PYGLUE ###
 
-if(OCIO_BUILD_PYGLUE)
+if(OCIO_BUILD_PYGLUE AND NOT ${CMAKE_BUILD_TYPE} MATCHES "Debug")
     if(PYTHON_OK)
         add_subdirectory(src/pyglue)
     else()

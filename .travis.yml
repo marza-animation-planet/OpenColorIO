@@ -12,7 +12,7 @@ os:
   - osx
 
 env:
-  - OPTIONS="-DCMAKE_BUILD_TYPE=Release -DOCIO_BUILD_TESTS=yes"
+  - OPTIONS="-DCMAKE_BUILD_TYPE=Release -DOCIO_BUILD_TESTS=yes -DOCIO_BUILD_DOCS=yes"
 
 # Run the Build script
 script:
@@ -20,7 +20,12 @@ script:
  - cd _build
  - cmake .. -DCMAKE_INSTALL_PREFIX=../_install $OPTIONS
  - cmake --build . --target install
-
-# Run Tests
-after_script:
  - ctest --output-on-failure .
+
+deploy:
+  provider: pages
+  skip_cleanup: true
+  github_token: $GITHUB_TOKEN
+  on:
+    tags: true
+  local_dir: ./docs/build-html

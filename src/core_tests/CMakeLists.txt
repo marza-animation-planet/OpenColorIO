@@ -11,9 +11,29 @@ include_directories(
     ${EXTERNAL_INCLUDE_DIRS}
     )
 
+if(WIN32)
+    # Hack to get around the "Debug" and "Release" sub directories 
+    #  cmake tries to add with Windows VC+++ IDE
+
+    # Set output path
+    set( CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} )
+    set( CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} )
+    set( CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} )
+    # For multi-config builds (e.g. msvc)
+    foreach( OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES} )
+        string( TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG )
+        set( CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_CURRENT_BINARY_DIR} )
+        set( CMAKE_LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_CURRENT_BINARY_DIR} )
+        set( CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_CURRENT_BINARY_DIR} )
+    endforeach( OUTPUTCONFIG CMAKE_CONFIGURATION_TYPES )
+endif()
+
+
 ## do not link with OpenColorIO since we reuse the sources files to build this app (avoid double link definition)
 file( GLOB_RECURSE core_test_src_files "${CMAKE_SOURCE_DIR}/src/core/*.cpp" )
 add_executable(ocio_core_tests ${EXTERNAL_OBJECTS} ${core_test_src_files})
+
+set_target_properties(ocio_core_tests PROPERTIES COMPILE_FLAGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
 
 if(USE_EXTERNAL_TINYXML)
     target_link_libraries(ocio_core_tests ${TINYXML_LIBRARIES})
@@ -43,13 +63,26 @@ set_target_properties(ocio_core_tests PROPERTIES
 
 set(OCIO_TEST_AREA ${CMAKE_CURRENT_BINARY_DIR})
 
-message(STATUS "Create ocio_core_tests.sh.in from ocio_core_tests.sh")
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/ocio_core_tests.sh.in
-    ${CMAKE_CURRENT_BINARY_DIR}/ocio_core_tests.sh @ONLY)
+if(UNIX)
+    message(STATUS "Create ocio_core_tests.sh.in from ocio_core_tests.sh")
 
-add_custom_target(MainTests
-                  COMMAND /bin/sh ${CMAKE_CURRENT_BINARY_DIR}/ocio_core_tests.sh
-                  DEPENDS ocio_core_tests
-                  COMMENT "Setting Up and Running OCIO UNIT tests")
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/ocio_core_tests.sh.in
+        ${CMAKE_CURRENT_BINARY_DIR}/ocio_core_tests.sh @ONLY)
+
+    add_custom_target(MainTests
+                      COMMAND /bin/sh ${CMAKE_CURRENT_BINARY_DIR}/ocio_core_tests.sh
+                      DEPENDS ocio_core_tests
+                      COMMENT "Setting Up and Running OCIO UNIT tests")
+else()
+    message(STATUS "Create ocio_core_tests.bat.in from ocio_core_tests.bat")
+
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/ocio_core_tests.bat.in
+        ${CMAKE_CURRENT_BINARY_DIR}/ocio_core_tests.bat @ONLY)
+
+    add_custom_target(MainTests
+                      COMMAND ${CMAKE_CURRENT_BINARY_DIR}/ocio_core_tests.bat
+                      DEPENDS ocio_core_tests
+                      COMMENT "Setting Up and Running OCIO UNIT tests")
+endif()
 
 add_test(ocio_core_tests "${CMAKE_COMMAND}" --build ${CMAKE_BINARY_DIR} --target MainTests)

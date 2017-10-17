@@ -59,6 +59,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define PyNumber_Int        PyNumber_Long
 #endif
 
+#ifdef WIN32
+    #define EXPORT_SYMBOL _declspec(dllexport)
+#else
+    #define EXPORT_SYMBOL
+#endif
+
 #if PY_MAJOR_VERSION >= 3
   #define MOD_ERROR_VAL NULL
   #define MOD_SUCCESS_VAL(val) val
@@ -86,7 +92,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 OCIO_NAMESPACE_ENTER
 {
-    
+
     typedef OCIO_SHARED_PTR<const GpuShaderDesc> ConstGpuShaderDescRcPtr;
     typedef OCIO_SHARED_PTR<GpuShaderDesc> GpuShaderDescRcPtr;
     //typedef OCIO_SHARED_PTR<const ImageDesc> ConstImageDescRcPtr;
@@ -95,9 +101,9 @@ OCIO_NAMESPACE_ENTER
     //typedef OCIO_SHARED_PTR<PackedImageDesc> PackedImageDescRcPtr;
     //typedef OCIO_SHARED_PTR<const PlanarImageDesc> ConstPlanarImageDescRcPtr;
     //typedef OCIO_SHARED_PTR<PlanarImageDesc> PlanarImageDescRcPtr;
-    
+
     ///////////////////////////////////////////////////////////////////////////
-    
+
     template<typename C, typename E>
     struct PyOCIOObject
     {
@@ -106,36 +112,36 @@ OCIO_NAMESPACE_ENTER
         E * cppobj;
         bool isconst;
     };
-    
+
     typedef PyOCIOObject <ConstConfigRcPtr, ConfigRcPtr> PyOCIO_Config;
     extern PyTypeObject PyOCIO_ConfigType;
-    
+
     typedef PyOCIOObject <ConstContextRcPtr, ContextRcPtr> PyOCIO_Context;
     extern PyTypeObject PyOCIO_ContextType;
-    
+
     typedef PyOCIOObject <ConstColorSpaceRcPtr, ColorSpaceRcPtr> PyOCIO_ColorSpace;
     extern PyTypeObject PyOCIO_ColorSpaceType;
-    
+
     typedef PyOCIOObject <ConstLookRcPtr, LookRcPtr> PyOCIO_Look;
     extern PyTypeObject PyOCIO_LookType;
-    
+
     typedef PyOCIOObject <ConstProcessorRcPtr, ProcessorRcPtr> PyOCIO_Processor;
     extern PyTypeObject PyOCIO_ProcessorType;
-    
+
     typedef PyOCIOObject <ConstProcessorMetadataRcPtr, ProcessorMetadataRcPtr> PyOCIO_ProcessorMetadata;
     extern PyTypeObject PyOCIO_ProcessorMetadataType;
-    
+
     typedef PyOCIOObject <ConstGpuShaderDescRcPtr, GpuShaderDescRcPtr> PyOCIO_GpuShaderDesc;
     extern PyTypeObject PyOCIO_GpuShaderDescType;
-    
+
     typedef PyOCIOObject <ConstBakerRcPtr, BakerRcPtr> PyOCIO_Baker;
     extern PyTypeObject PyOCIO_BakerType;
-    
+
     typedef PyOCIOObject <ConstTransformRcPtr, TransformRcPtr> PyOCIO_Transform;
     extern PyTypeObject PyOCIO_TransformType;
-    
+
     ///////////////////////////////////////////////////////////////////////////
-    
+
     extern PyTypeObject PyOCIO_AllocationTransformType;
     extern PyTypeObject PyOCIO_CDLTransformType;
     extern PyTypeObject PyOCIO_ColorSpaceTransformType;
@@ -146,13 +152,13 @@ OCIO_NAMESPACE_ENTER
     extern PyTypeObject PyOCIO_LogTransformType;
     extern PyTypeObject PyOCIO_LookTransformType;
     extern PyTypeObject PyOCIO_MatrixTransformType;
-    
+
     ///////////////////////////////////////////////////////////////////////////
-    
+
     ConstGpuShaderDescRcPtr GetConstGpuShaderDesc(PyObject * pyobject);
-    
+
     ///////////////////////////////////////////////////////////////////////////
-    
+
     template<typename P, typename T, typename C>
     inline PyObject * BuildConstPyOCIO(C ptr, PyTypeObject& type)
     {
@@ -164,7 +170,7 @@ OCIO_NAMESPACE_ENTER
         obj->isconst = true;
         return ( PyObject * ) obj;
     }
-    
+
     template<typename P, typename T, typename C>
     inline PyObject * BuildEditablePyOCIO(T ptr, PyTypeObject& type)
     {
@@ -176,7 +182,7 @@ OCIO_NAMESPACE_ENTER
         obj->isconst = false;
         return ( PyObject * ) obj;
     }
-    
+
     template<typename P, typename C, typename T>
     inline int BuildPyObject(P * self, T ptr)
     {
@@ -186,7 +192,7 @@ OCIO_NAMESPACE_ENTER
         self->isconst = false;
         return 0;
     }
-    
+
     template<typename T>
     inline int BuildPyTransformObject(PyOCIO_Transform* self, T ptr)
     {
@@ -196,7 +202,7 @@ OCIO_NAMESPACE_ENTER
         self->isconst = false;
         return 0;
     }
-    
+
     template<typename T>
     void DeletePyObject(T * self)
     {
@@ -204,13 +210,13 @@ OCIO_NAMESPACE_ENTER
         if(self->cppobj != NULL) delete self->cppobj;
         Py_TYPE(self)->tp_free((PyObject*)self);
     }
-    
+
     inline bool IsPyOCIOType(PyObject* pyobject, PyTypeObject& type)
     {
         if(!pyobject) return false;
         return PyObject_TypeCheck(pyobject, &type);
     }
-    
+
     template<typename T>
     inline bool IsPyEditable(PyObject * pyobject, PyTypeObject& type)
     {
@@ -218,7 +224,7 @@ OCIO_NAMESPACE_ENTER
         T * pyobj = reinterpret_cast<T *> (pyobject);
         return (!pyobj->isconst);
     }
-    
+
     template<typename P, typename C>
     inline C GetConstPyOCIO(PyObject* pyobject, PyTypeObject& type, bool allowCast = true)
     {
@@ -231,7 +237,7 @@ OCIO_NAMESPACE_ENTER
             return *ptr->cppobj;
         throw Exception("PyObject must be a valid OCIO type");
     }
-    
+
     template<typename P, typename C, typename T>
     inline C GetConstPyOCIO(PyObject* pyobject, PyTypeObject& type, bool allowCast = true)
     {
@@ -246,7 +252,7 @@ OCIO_NAMESPACE_ENTER
         if(!cptr) throw Exception("PyObject must be a valid OCIO type");
         return cptr;
     }
-    
+
     template<typename P, typename C>
     inline C GetEditablePyOCIO(PyObject* pyobject, PyTypeObject& type)
     {
@@ -257,7 +263,7 @@ OCIO_NAMESPACE_ENTER
             return *ptr->cppobj;
         throw Exception("PyObject must be a editable OCIO type");
     }
-    
+
     template<typename P, typename C, typename T>
     inline C GetEditablePyOCIO(PyObject* pyobject, PyTypeObject& type)
     {
@@ -270,9 +276,9 @@ OCIO_NAMESPACE_ENTER
         if(!cptr) throw Exception("PyObject must be a editable OCIO type");
         return cptr;
     }
-    
+
     ///////////////////////////////////////////////////////////////////////////
-    
+
     int ConvertPyObjectToBool(PyObject *object, void *valuePtr);
     int ConvertPyObjectToAllocation(PyObject *object, void *valuePtr);
     int ConvertPyObjectToInterpolation(PyObject *object, void *valuePtr);
@@ -280,30 +286,30 @@ OCIO_NAMESPACE_ENTER
     int ConvertPyObjectToColorSpaceDirection(PyObject *object, void *valuePtr);
     int ConvertPyObjectToGpuLanguage(PyObject *object, void *valuePtr);
     int ConvertPyObjectToEnvironmentMode(PyObject *object, void *valuePtr);
-    
+
     ///////////////////////////////////////////////////////////////////////////
-    
+
     // Generics.
     // None of these allow an interpreter error to leak
-    
+
     //! Use a variety of methods to get the value, as the specified type
     //! from the specified PyObject. (Return true on success, false on failure)
     //!
     //! 1. See if object is PyFloat, return value
     //! 2. See if object is PyInt, return value
     //! 3. Attempt to cast to PyFloat / PyInt (equivalent to calling float(obj)/int(obj) in python)
-    
+
     bool GetIntFromPyObject(PyObject* object, int* val);
     bool GetFloatFromPyObject(PyObject* object, float* val);
     bool GetDoubleFromPyObject(PyObject* object, double* val);
-    
+
     //! 1. See if object is a PyString, return value
     //! 2. Attempt to cast to a PyString (equivalent to calling str(obj) in python
     //! Note: This will basically always succeed, even if the object is not string-like
     //! (such as passing Py_None as val), so you cannot use this to check str type.
-    
+
     bool GetStringFromPyObject(PyObject* object, std::string* val);
-    
+
     // Can return a null pointer if PyList_New(size) fails.
     PyObject* CreatePyListFromIntVector(const std::vector<int> &data);
     PyObject* CreatePyListFromFloatVector(const std::vector<float> &data);
@@ -311,22 +317,22 @@ OCIO_NAMESPACE_ENTER
     PyObject* CreatePyListFromStringVector(const std::vector<std::string> &data);
     PyObject* CreatePyListFromTransformVector(const std::vector<ConstTransformRcPtr> &data);
     PyObject* CreatePyDictFromStringMap(const std::map<std::string, std::string> &data);
-    
+
     //! Fill the specified vector type from the given pyobject
     //! Return true on success, false on failure.
     //! The PyObject must be a tuple or list, filled with the appropriate data types
     //! (either PyInt, PyFloat, or something convertible to one)
-    
+
     bool FillIntVectorFromPySequence(PyObject* datalist, std::vector<int> &data);
     bool FillFloatVectorFromPySequence(PyObject* datalist, std::vector<float> &data);
     bool FillDoubleVectorFromPySequence(PyObject* datalist, std::vector<double> &data);
     bool FillStringVectorFromPySequence(PyObject* datalist, std::vector<std::string> &data);
     bool FillTransformVectorFromPySequence(PyObject* datalist, std::vector<ConstTransformRcPtr> &data);
-    
+
     ///////////////////////////////////////////////////////////////////////////
-    
+
     void Python_Handle_Exception();
-    
+
 }
 OCIO_NAMESPACE_EXIT
 
