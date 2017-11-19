@@ -50,6 +50,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "PrivateTypes.h"
 #include "pystring/pystring.h"
 #include "OCIOYaml.h"
+#include "Platform.h"
 
 OCIO_NAMESPACE_ENTER
 {
@@ -262,12 +263,14 @@ OCIO_NAMESPACE_ENTER
             strictParsing_(true),
             sanity_(SANITY_UNKNOWN)
         {
-            char* activeDisplays = std::getenv(OCIO_ACTIVE_DISPLAYS_ENVVAR);
-            SplitStringEnvStyle(activeDisplaysEnvOverride_, activeDisplays);
-
-            char * activeViews = std::getenv(OCIO_ACTIVE_VIEWS_ENVVAR);
-            SplitStringEnvStyle(activeViewsEnvOverride_, activeViews);
-
+            std::string activeDisplays;
+            Platform::getenv(OCIO_ACTIVE_DISPLAYS_ENVVAR, activeDisplays);
+            SplitStringEnvStyle(activeDisplaysEnvOverride_, activeDisplays.c_str());
+            
+            std::string activeViews;
+            Platform::getenv(OCIO_ACTIVE_VIEWS_ENVVAR, activeViews);
+            SplitStringEnvStyle(activeViewsEnvOverride_, activeViews.c_str());
+            
             defaultLumaCoefs_.resize(3);
             defaultLumaCoefs_[0] = DEFAULT_LUMA_COEFF_R;
             defaultLumaCoefs_[1] = DEFAULT_LUMA_COEFF_G;
@@ -351,9 +354,10 @@ OCIO_NAMESPACE_ENTER
 
     ConstConfigRcPtr Config::CreateFromEnv()
     {
-        char* file = std::getenv(OCIO_CONFIG_ENVVAR);
-        if(file) return CreateFromFile(file);
-
+        std::string file;
+        Platform::getenv(OCIO_CONFIG_ENVVAR, file);
+        if(!file.empty()) return CreateFromFile(file.c_str());
+        
         std::ostringstream os;
         os << "Color management disabled. ";
         os << "(Specify the $OCIO environment variable to enable.)";
@@ -1620,7 +1624,7 @@ OIIO_ADD_TEST(Config, InternalRawProfile)
 {
     std::istringstream is;
     is.str(OCIO::INTERNAL_RAW_PROFILE);
-    OIIO_CHECK_NO_THOW(OCIO::ConstConfigRcPtr config = OCIO::Config::CreateFromStream(is));
+    OIIO_CHECK_NO_THROW(OCIO::ConstConfigRcPtr config = OCIO::Config::CreateFromStream(is));
 }
 
 OIIO_ADD_TEST(Config, SimpleConfig)
@@ -1694,7 +1698,7 @@ OIIO_ADD_TEST(Config, SimpleConfig)
     std::istringstream is;
     is.str(SIMPLE_PROFILE);
     OCIO::ConstConfigRcPtr config;
-    OIIO_CHECK_NO_THOW(config = OCIO::Config::CreateFromStream(is));
+    OIIO_CHECK_NO_THROW(config = OCIO::Config::CreateFromStream(is));
 }
 
 OIIO_ADD_TEST(Config, Roles)
@@ -1719,8 +1723,8 @@ OIIO_ADD_TEST(Config, Roles)
     std::istringstream is;
     is.str(SIMPLE_PROFILE);
     OCIO::ConstConfigRcPtr config;
-    OIIO_CHECK_NO_THOW(config = OCIO::Config::CreateFromStream(is));
-
+    OIIO_CHECK_NO_THROW(config = OCIO::Config::CreateFromStream(is));
+    
     OIIO_CHECK_EQUAL(config->getNumRoles(), 3);
 
     OIIO_CHECK_ASSERT(config->hasRole("compositing_log") == true);
@@ -1843,7 +1847,7 @@ OIIO_ADD_TEST(Config, SanityCheck)
     std::istringstream is;
     is.str(SIMPLE_PROFILE);
     OCIO::ConstConfigRcPtr config;
-    OIIO_CHECK_THOW(config = OCIO::Config::CreateFromStream(is), OCIO::Exception);
+    OIIO_CHECK_THROW(config = OCIO::Config::CreateFromStream(is), OCIO::Exception);
     }
 
     {
@@ -1863,9 +1867,9 @@ OIIO_ADD_TEST(Config, SanityCheck)
     std::istringstream is;
     is.str(SIMPLE_PROFILE);
     OCIO::ConstConfigRcPtr config;
-    OIIO_CHECK_NO_THOW(config = OCIO::Config::CreateFromStream(is));
-
-    OIIO_CHECK_NO_THOW(config->sanityCheck());
+    OIIO_CHECK_NO_THROW(config = OCIO::Config::CreateFromStream(is));
+    
+    OIIO_CHECK_NO_THROW(config->sanityCheck());
     }
 }
 
@@ -1914,7 +1918,7 @@ OIIO_ADD_TEST(Config, EnvCheck)
     std::istringstream is;
     is.str(SIMPLE_PROFILE);
     OCIO::ConstConfigRcPtr config;
-    OIIO_CHECK_NO_THOW(config = OCIO::Config::CreateFromStream(is));
+    OIIO_CHECK_NO_THROW(config = OCIO::Config::CreateFromStream(is));
     OIIO_CHECK_EQUAL(config->getNumEnvironmentVars(), 5);
     OIIO_CHECK_ASSERT(strcmp(config->getCurrentContext()->resolveStringVar("test${test}"),
         "testbarchedder") == 0);
@@ -1947,7 +1951,7 @@ OIIO_ADD_TEST(Config, EnvCheck)
     OCIO::SetLoggingLevel(OCIO::LOGGING_LEVEL_DEBUG);
     is.str(SIMPLE_PROFILE2);
     OCIO::ConstConfigRcPtr noenv;
-    OIIO_CHECK_NO_THOW(noenv = OCIO::Config::CreateFromStream(is));
+    OIIO_CHECK_NO_THROW(noenv = OCIO::Config::CreateFromStream(is));
     OIIO_CHECK_ASSERT(strcmp(noenv->getCurrentContext()->resolveStringVar("${TASK}"),
         "lighting") == 0);
     OCIO::SetLoggingLevel(loglevel);
@@ -1965,7 +1969,112 @@ OIIO_ADD_TEST(Config, RoleWithoutColorSpace)
     config->setRole("reference", "UnknownColorSpace");
 
     std::ostringstream os;
-    OIIO_CHECK_THOW(config->serialize(os), OCIO::Exception);
+    OIIO_CHECK_THROW(config->serialize(os), OCIO::Exception);
+}
+
+OIIO_ADD_TEST(Config, Env_colorspace_name)
+{
+    const std::string MY_OCIO_CONFIG =
+        "ocio_profile_version: 1\n"
+        "\n"
+        "search_path: luts\n"
+        "strictparsing: true\n"
+        "luma: [0.2126, 0.7152, 0.0722]\n"
+        "\n"
+        "roles:\n"
+        "  compositing_log: lgh\n"
+        "  default: raw\n"
+        "  scene_linear: lnh\n"
+        "\n"
+        "displays:\n"
+        "  sRGB:\n"
+        "    - !<View> {name: Raw, colorspace: raw}\n"
+        "\n"
+        "active_displays: []\n"
+        "active_views: []\n"
+        "\n"
+        "colorspaces:\n"
+        "  - !<ColorSpace>\n"
+        "    name: raw\n"
+        "    family: \"\"\n"
+        "    equalitygroup: \"\"\n"
+        "    bitdepth: unknown\n"
+        "    isdata: false\n"
+        "    allocation: uniform\n"
+        "\n"
+        "  - !<ColorSpace>\n"
+        "    name: lnh\n"
+        "    family: \"\"\n"
+        "    equalitygroup: \"\"\n"
+        "    bitdepth: unknown\n"
+        "    isdata: false\n"
+        "    allocation: uniform\n"
+        "\n"
+        "  - !<ColorSpace>\n"
+        "    name: lgh\n"
+        "    family: \"\"\n"
+        "    equalitygroup: \"\"\n"
+        "    bitdepth: unknown\n"
+        "    isdata: false\n"
+        "    allocation: uniform\n"
+        "    allocationvars: [-0.125, 1.125]\n"
+        "    from_reference: !<ColorSpaceTransform> {src: raw, dst: $CAMERARAW}\n";
+
+
+    {
+        // Test when the env. variable is missing
+
+        std::istringstream is;
+        is.str(MY_OCIO_CONFIG);
+
+        OCIO::ConstConfigRcPtr config;
+        OIIO_CHECK_NO_THROW(config = OCIO::Config::CreateFromStream(is));
+        OIIO_CHECK_NO_THROW(config->sanityCheck());
+        OIIO_CHECK_THROW(config->getProcessor("raw", "lgh"), OCIO::Exception);
+    }
+
+    {
+        char * env = (char *)"CAMERARAW=lnh";
+        putenv(env);
+
+        std::istringstream is;
+        is.str(MY_OCIO_CONFIG);
+
+        OCIO::ConstConfigRcPtr config;
+        OIIO_CHECK_NO_THROW(config = OCIO::Config::CreateFromStream(is));
+        OIIO_CHECK_NO_THROW(config->sanityCheck());
+        OIIO_CHECK_NO_THROW(config->getProcessor("raw", "lgh"));
+    }
+
+    {
+        // Test when the env. variable content is wrong
+
+        char * env = (char *)"CAMERARAW=FaultyColorSpaceName";
+        putenv(env);
+
+        std::istringstream is;
+        is.str(MY_OCIO_CONFIG);
+
+        OCIO::ConstConfigRcPtr config;
+        OIIO_CHECK_NO_THROW(config = OCIO::Config::CreateFromStream(is));
+        OIIO_CHECK_NO_THROW(config->sanityCheck());
+        OIIO_CHECK_THROW(config->getProcessor("raw", "lgh"), OCIO::Exception);
+    }
+
+    {
+        // Check that the serialization preserves the env. variable
+
+        std::istringstream is;
+        is.str(MY_OCIO_CONFIG);
+
+        OCIO::ConstConfigRcPtr config;
+        OIIO_CHECK_NO_THROW(config = OCIO::Config::CreateFromStream(is));
+        OIIO_CHECK_NO_THROW(config->sanityCheck());
+
+        std::stringstream ss;
+        ss << *config.get();
+        OIIO_CHECK_EQUAL(ss.str(), MY_OCIO_CONFIG);
+    }
 }
 
 #endif // OCIO_UNIT_TEST
