@@ -27,7 +27,7 @@ ocio_sse2 = (excons.GetArgument("ocio-use-sse2", 1, int) != 0)
 ocio_hideinlines = (excons.GetArgument("ocio-hide-inlines", 1, int) != 0)
 ocio_namespace = excons.GetArgument("ocio-namespace", "OpenColorIO")
 ocio_use_boost = (excons.GetArgument("ocio-use-boost", 0, int) != 0)
-ocio_version = (1, 0, 9)
+ocio_version = (1, 1, 0)
 
 ocio_config = {"OCIO_NAMESPACE"     : ocio_namespace,
                "OCIO_VERSION_MAJOR" : str(ocio_version[0]),
