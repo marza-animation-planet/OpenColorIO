@@ -20,6 +20,7 @@ option(OCIO_BUILD_APPS "Set to OFF to disable command-line apps" ON)
 option(OCIO_BUILD_NUKE "Set to OFF to disable building nuke plugins" ON)
 option(OCIO_BUILD_DOCS "Specify whether to build documentation" UNIX)
 option(OCIO_BUILD_TESTS "Specify whether to build unittests" ON)
+option(OCIO_BUILD_GPU_TESTS "Specify whether to build unittests" ON)
 option(OCIO_BUILD_PYGLUE "Specify whether to build python bindings" ON)
 option(OCIO_BUILD_JNIGLUE "Specify whether to build java bindings" OFF)
 option(OCIO_STATIC_JNIGLUE "Specify whether to statically link ocio to the java bindings" ON)
@@ -59,6 +60,7 @@ endif()
 include(ParseArguments)
 include(OCIOMacros)
 include(ExternalProject)
+include(GNUInstallDirs)
 
 enable_language(CXX)
 
@@ -444,15 +446,43 @@ if(OCIO_BUILD_TRUELIGHT)
     endif()
 endif()
 
+
 ###############################################################################
 ### CORE ###
 
 add_subdirectory(src/core)
 
+if(OCIO_BUILD_GPU_TESTS OR OCIO_BUILD_APPS)
+    OCIOFindOpenGL()
+endif()
+
+
+###############################################################################
+### CPU TESTS ###
+
 messageonce("Build Unit Tests: ${OCIO_BUILD_TESTS}")
 if(OCIO_BUILD_TESTS)
     add_subdirectory(src/core_tests)
+else()
+    messageonce("Not building unit tests...")
 endif()
+
+
+###############################################################################
+### GPU TESTS ###
+
+messageonce("Build GPU Unit Tests: ${OCIO_BUILD_GPU_TESTS}")
+if(OCIO_BUILD_GPU_TESTS)
+    if(NOT OPENGL_FOUND OR NOT GLUT_FOUND OR NOT GLEW_FOUND OR NOT OCIO_BUILD_SHARED)
+        messageonce("Not building gpu unit tests. Requirement(s) found, OpenColorIO:${OCIO_BUILD_SHARED}, OpenGL:${OPENGL_FOUND}, GLUT:${GLUT_FOUND}, GLEW:${GLEW_FOUND}")
+        set(OCIO_BUILD_GPU_TESTS OFF)
+    else()
+        add_subdirectory(src/core_gpu_tests)
+    endif()
+else()
+    messageonce("Not building gpu unit tests.")
+endif()
+
 
 ###############################################################################
 ### APPS ###
@@ -471,7 +501,6 @@ if(OCIO_BUILD_APPS AND (OCIO_BUILD_STATIC OR OCIO_BUILD_SHARED) )
     
     # ociodisplay, displays color-transformed images (uses OpenImageIO,
     # and OpenGL)
-    OCIOFindOpenGL()
     if(OPENGL_FOUND AND GLUT_FOUND AND GLEW_FOUND AND OIIO_FOUND)
         add_subdirectory(src/apps/ociodisplay)
     else()
@@ -487,7 +516,7 @@ if(OCIO_BUILD_APPS AND (OCIO_BUILD_STATIC OR OCIO_BUILD_SHARED) )
     add_subdirectory(src/apps/ociobakelut)
     
 else()
-    message(STATUS "Disable build of apps. See cmake options : OCIO_BUILD_APPS and OCIO_BUILD_SHARED/OCIO_BUILD_STATIC (requiered)")
+    message(STATUS "Disable build of apps. See cmake options : OCIO_BUILD_APPS and OCIO_BUILD_SHARED/OCIO_BUILD_STATIC (required)")
 endif()
 
 ###############################################################################
@@ -531,7 +560,7 @@ endif()
 configure_file(${CMAKE_SOURCE_DIR}/share/ocio/setup_ocio.sh.in
     ${CMAKE_CURRENT_BINARY_DIR}/share/ocio/setup_ocio.sh @ONLY)
 
-INSTALL(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/share/ocio/setup_ocio.sh DESTINATION share/ocio/)
+INSTALL(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/share/ocio/setup_ocio.sh DESTINATION ${CMAKE_INSTALL_DATADIR}/ocio/)
 
 ###############################################################################
 ### CPACK ###
@@ -547,9 +576,17 @@ include(CPack)
 ###############################################################################
 ### CTEST ###
 
+if(OCIO_BUILD_TESTS)
+    set(TEST_DEPENDS ocio_core_tests)
+endif()
+
+if(OCIO_BUILD_GPU_TESTS)
+    set(TEST_DEPENDS ${TEST_DEPENDS} ocio_core_gpu_tests)
+endif()
+
 add_custom_target(test_verbose
                   COMMAND ctest -VV
-                  DEPENDS ocio_core_tests
+                  DEPENDS ${TEST_DEPENDS}
                   COMMENT "Running ctest with verbose output")
 
 # Log CMake first run done
@@ -596,7 +633,7 @@ if(TARGET OpenColorIO_STATIC)
         set(OCIO_STATIC_COMPILE_DEFINITIONS )
     endif()
 endif()
-install(EXPORT OpenColorIO DESTINATION cmake)
+install(EXPORT OpenColorIO DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/OpenColorIO)
 file(WRITE "${CMAKE_BINARY_DIR}/OpenColorIOConfig.cmake"
     "
     get_filename_component(OpenColorIO_DIR \"\${CMAKE_CURRENT_LIST_FILE}\" PATH)
@@ -608,7 +645,7 @@ file(WRITE "${CMAKE_BINARY_DIR}/OpenColorIOConfig.cmake"
     
     ## targets libraries + associated definitions
     if(NOT TARGET OpenColorIO)
-        include(\"\${OpenColorIO_DIR}/cmake/OpenColorIO.cmake\") ## thanks to imported target
+        include(\"\${OpenColorIO_DIR}/${CMAKE_INSTALL_LIBDIR}/cmake/OpenColorIO/OpenColorIO.cmake\") ## thanks to imported target
         if(TARGET OpenColorIO AND NOT OpenColorIO_USE_STATIC)
             message(STATUS \"shared target OpenColorIO : see OpenColorIO_LIBRARY\")
             set(OpenColorIO_LIBRARY         OpenColorIO)
@@ -646,4 +683,4 @@ file(WRITE "${CMAKE_BINARY_DIR}/OpenColorIOConfig.cmake"
     message(STATUS OPENCOLORIO_FOUND=\${OPENCOLORIO_FOUND})
     "
 )
-install(FILES "${CMAKE_BINARY_DIR}/OpenColorIOConfig.cmake" DESTINATION .)
+install(FILES "${CMAKE_BINARY_DIR}/OpenColorIOConfig.cmake" DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/OpenColorIO)

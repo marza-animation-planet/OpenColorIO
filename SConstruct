@@ -6,9 +6,16 @@ import shutil
 import tarfile
 import excons
 import subprocess
+import tarfile
 from excons.tools import boost
 from excons.tools import python
 
+
+if not os.path.isdir("./testdata/unittestsfiles"):
+   os.makedirs("./testdata/unittestsfiles")
+   tgz = tarfile.open("./testdata/unittestsfiles.tar.gz")
+   tgz.extractall("./testdata/unittestsfiles")
+   tgz.close()
 
 
 env = excons.MakeBaseEnv()
@@ -323,7 +330,9 @@ projs = [
    {  "name": "ocio_core_tests",
       "type": "program",
       "alias": "ocio-tests",
-      "defs": defs + ["OCIO_UNIT_TEST", "OCIO_SOURCE_DIR=\"%s\"" % os.path.abspath(".").replace("\\", "/")],
+      "defs": defs + ["OCIO_UNIT_TEST",
+                      "OCIO_SOURCE_DIR=\"%s\"" % os.path.abspath(".").replace("\\", "/"),
+                      "OCIO_UNIT_TEST_FILES_DIR=\"%s\"" % os.path.abspath(".").replace("\\", "/") + "/testdata/unittestsfiles"],
       "cflags": cflags,
       "cppflags": cppflags,
       "incdirs": libincdirs,

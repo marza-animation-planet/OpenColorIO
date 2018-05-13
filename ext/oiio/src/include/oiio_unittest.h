@@ -35,6 +35,7 @@
 #include <cmath>
 #include <vector>
 #include <string>
+#include <iomanip>
 
 extern int unit_test_failures;
 
@@ -110,13 +111,31 @@ struct AddTest { AddTest(OIIOTest* test); };
 
 #define OIIO_CHECK_CLOSE(x,y,tol)                                       \
     ((std::abs((x) - (y)) < (tol)) ? ((void)0)                          \
-         : ((std::cout << __FILE__ << ":" << __LINE__ << ":\n"          \
+         : ((std::cout << std::setprecision(10)                         \
+             << __FILE__ << ":" << __LINE__ << ":\n"                    \
              << "FAILED: abs(" << #x << " - " << #y << ") < " << #tol << "\n" \
              << "\tvalues were '" << (x) << "', '" << (y) << "' and '" << (tol) << "'\n"), \
             (void)++unit_test_failures))
 
 #define OIIO_CHECK_THROW(S, E)                                          \
     try { S; throw "throwanything"; } catch( E const& ) { } catch (...) { \
+        std::cout << __FILE__ << ":" << __LINE__ << ":\n"               \
+        << "FAILED: " << #E << " is expected to be thrown\n";           \
+        ++unit_test_failures; }
+
+// Check that an exception E is thrown and that what() contains W
+// When a function can throw different exceptions this can be used
+// to verify that the right one is thrown.
+#define OIIO_CHECK_THROW_WHAT(S, E, W)                                  \
+    try { S; throw "throwanything"; } catch (E const& ex) {             \
+        std::string what(ex.what());                                    \
+        if (what.find(W) == std::string::npos) {                        \
+            std::cout << __FILE__ << ":" << __LINE__ << ":\n"           \
+            << "FAILED: " << #E << " was thrown with \"" << what <<     \
+            "\". Expecting to contain \"" << W << "\"\n";               \
+            ++unit_test_failures;                                       \
+        }                                                               \
+    } catch (...) {                                                     \
         std::cout << __FILE__ << ":" << __LINE__ << ":\n"               \
         << "FAILED: " << #E << " is expected to be thrown\n";           \
         ++unit_test_failures; }

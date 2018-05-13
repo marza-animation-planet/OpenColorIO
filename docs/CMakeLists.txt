@@ -138,9 +138,16 @@ add_custom_target(doc ALL
 add_dependencies(doc Sphinx) 
 
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/build-html/
-        DESTINATION ${CMAKE_INSTALL_PREFIX}/share/doc/OpenColorIO/html
+        DESTINATION ${CMAKE_INSTALL_DOCDIR}/html
         PATTERN .* EXCLUDE
 )
+
+if(TARGET doc)
+    message(STATUS "Copying admin doc files to deploy area")
+    file(COPY ${CMAKE_SOURCE_DIR}/docs/.nojekyll
+              ${CMAKE_SOURCE_DIR}/docs/google2560df9c4b755196.html
+         DESTINATION ${CMAKE_BINARY_DIR}/docs/build-html)
+endif()
 
 find_package(LATEX)
 if(PDFLATEX_COMPILER)
@@ -166,6 +173,6 @@ if(PDFLATEX_COMPILER)
     add_dependencies(pdf latex)
     
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/build-latex/OpenColorIO.pdf
-            DESTINATION ${CMAKE_INSTALL_PREFIX}/share/doc/OpenColorIO/)
+            DESTINATION ${CMAKE_INSTALL_DOCDIR})
     
 endif()

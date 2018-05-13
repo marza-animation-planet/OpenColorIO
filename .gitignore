@@ -10,6 +10,7 @@ mastercopy
 /release
 /debug
 /.build
+/testdata/unittestsfiles/
 excons.cache
 *.dblite
 export/OpenColorIO/OpenColorABI.h
