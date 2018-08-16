@@ -69,7 +69,7 @@ else:
 if sys.platform == "darwin":
    # OSSpinLockUnlock used in Mutex.h is deprecated starting MacOS 10.12
    cppflags += " -Wno-deprecated-declarations"
-libincdirs = ["export", "src/core", "ext/oiio/src/include"]
+libincdirs = ["export", "src/core", "ext/oiio/src/include", "ext/sampleicc/src/include"]
 libcustoms = []
 if ocio_sse2:
    defs.append("USE_SSE")
