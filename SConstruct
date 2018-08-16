@@ -237,7 +237,7 @@ InstallHeaders = env.Install(incDir, excons.glob("export/OpenColorIO/*.h"))
 
 InstallOpenGLHeaders = env.Install(excons.OutputBaseDirectory()+"/include", excons.glob("src/lang-glsl/*.h"))
 
-pydoc = env.GeneratePyDoc("src/pyglue/PyDoc.h", "src/pyglue/createPyDocH.py")
+pydoc = env.GeneratePyDoc("src/pyglue/PyDoc.h", ["src/pyglue/createPyDocH.py"] + excons.glob("src/pyglue/DocStrings/*.py"))
 
 
 def OCIOName(static=True):
