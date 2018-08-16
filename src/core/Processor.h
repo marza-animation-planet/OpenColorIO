@@ -30,8 +30,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef INCLUDED_OCIO_PROCESSOR_H
 #define INCLUDED_OCIO_PROCESSOR_H
 
-#include <sstream>
-
 #include <OpenColorIO/OpenColorIO.h>
 
 #include "Mutex.h"
@@ -46,6 +44,7 @@ OCIO_NAMESPACE_ENTER
         ProcessorMetadataRcPtr m_metadata;
         
         OpRcPtrVec m_cpuOps;
+        OpRcPtrVec m_gpuOps;
         
         // These 3 op vecs represent the 3 stages in our gpu pipe.
         // 1) preprocess shader text
@@ -57,14 +56,6 @@ OCIO_NAMESPACE_ENTER
         OpRcPtrVec m_gpuOpsHwPostProcess;
         
         mutable std::string m_cpuCacheID;
-        
-        // Cache the last last queried value,
-        // for the specified shader description
-        mutable std::string m_lastShaderDesc;
-        mutable std::string m_shader;
-        mutable std::string m_shaderCacheID;
-        mutable std::vector<float> m_lut3D;
-        mutable std::string m_lut3DCacheID;
         
         mutable Mutex m_resultsCacheMutex;
         
@@ -83,12 +74,9 @@ OCIO_NAMESPACE_ENTER
         void applyRGBA(float * pixel) const;
         const char * getCpuCacheID() const;
         
-        const char * getGpuShaderText(const GpuShaderDesc & gpuDesc) const;
-        const char * getGpuShaderTextCacheID(const GpuShaderDesc & shaderDesc) const;
-        
-        void getGpuLut3D(float* lut3d, const GpuShaderDesc & shaderDesc) const;
-        const char * getGpuLut3DCacheID(const GpuShaderDesc & shaderDesc) const;
-        
+        // Extract all the information to fully implement the processor shader program.
+        void extractGpuShaderInfo(GpuShaderDescRcPtr & shaderDesc) const;
+
         ////////////////////////////////////////////
         //
         // Builder functions, Not exposed
@@ -104,28 +92,8 @@ OCIO_NAMESPACE_ENTER
                           TransformDirection direction);
         
         void finalize();
-        
-        void calcGpuShaderText(std::ostream & shader,
-                               const GpuShaderDesc & shaderDesc) const;
-    
     };
     
-    // TODO: Move these!
-    // TODO: Its not ideal that buildops requires a config to be passed around
-    // but the only alternative is to make build ops a function on it?
-    // and even if it were, what about the build calls it dispatches to...
-    
-    // TODO: all of the build op functions shouldnt take a LocalProcessor class
-    // Instead, they should take an abstract interface class that defines
-    // registerOp(OpRcPtr op), annotateColorSpace, finalizeOps, etc.
-    // of which LocalProcessor happens to be one example.
-    // Then the only location in the codebase that knows of LocalProcessor is
-    // in Config.cpp, which creates one.
-    
-    void BuildOps(OpRcPtrVec & ops,
-                  const Config & config,
-                  const ConstTransformRcPtr & transform,
-                  TransformDirection dir);
 }
 OCIO_NAMESPACE_EXIT
 
