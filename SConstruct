@@ -9,6 +9,8 @@ import subprocess
 import tarfile
 from excons.tools import boost
 from excons.tools import python
+from excons.tools import gl
+from excons.tools import glew
 
 
 if not os.path.isdir("./testdata/unittestsfiles"):
@@ -34,6 +36,7 @@ ocio_sse2 = (excons.GetArgument("ocio-use-sse2", 1, int) != 0)
 ocio_hideinlines = (excons.GetArgument("ocio-hide-inlines", 1, int) != 0)
 ocio_namespace = excons.GetArgument("ocio-namespace", "OpenColorIO")
 ocio_use_boost = (excons.GetArgument("ocio-use-boost", 0, int) != 0)
+ocio_opengl_use_static_ocio = (excons.GetArgument("ocio-opengl-use-static-ocio", 1, int) != 0)
 ocio_version = (1, 1, 0)
 
 ocio_config = {"OCIO_NAMESPACE"     : ocio_namespace,
@@ -232,6 +235,8 @@ else:
 
 InstallHeaders = env.Install(incDir, excons.glob("export/OpenColorIO/*.h"))
 
+InstallOpenGLHeaders = env.Install(excons.OutputBaseDirectory()+"/include", excons.glob("src/lang-glsl/*.h"))
+
 pydoc = env.GeneratePyDoc("src/pyglue/PyDoc.h", "src/pyglue/createPyDocH.py")
 
 
@@ -263,6 +268,26 @@ def RequireOCIO(env, static=True):
    if ocio_use_boost:
       boost.Require()(env)
 
+def OCIOOpenGLName():
+   if sys.platform == "win32":
+      return "libOCIOOpenGL"
+   else:
+      return "OCIOOpenGL"
+
+def OCIOOpenGLPath():
+   name = OCIOOpenGLName()
+   if sys.platform == "win32":
+      libname = name + ".lib"
+   else:
+      libname = "lib" + name + ".a"
+   return excons.OutputBaseDirectory() + "/lib/" + libname
+
+def RequireOCIOOpenGL(env):
+   RequireOCIO(env, static=ocio_opengl_use_static_ocio)
+   gl.Require(env)
+   if sys.platform != "darwin":
+      glew.Require(env)
+   excons.Link(env, OCIOOpenGLPath(), static=True, force=True, silent=True)
 
 
 projs = [
@@ -293,6 +318,18 @@ projs = [
               excons.glob("src/core/md5/*.cpp") +
               excons.glob("src/core/pystring/*.cpp"),
       "custom": libcustoms
+   },
+   # OCIOOpenGL
+   {
+      "name": OCIOOpenGLName(),
+      "type": "staticlib",
+      "alias": "ocio-opengl",
+      "symvis": "default",
+      "cflags": cflags,
+      "cppflags": cppflags,
+      "incdirs": ["src/lang-glsl"],
+      "srcs": excons.glob("src/lang-glsl/*.cpp"),
+      "custom": [RequireOCIOOpenGL]
    },
    # Python binding
    {  "name": "PyOpenColorIO",
@@ -345,17 +382,19 @@ projs = [
 ]
 
 excons.AddHelpOptions(opencolorio="""OPENCOLORIO OPTIONS
-  ocio-name                    : Library name                       ["OpenColorIO"]
-  ocio-suffix=<str>            : Library suffix                     [""]
-                                 (Ignored if ocio-name flag is set)
-  ocio-namespace=<str>         : Library namespace                  ["OpenColorIO"]
-  ocio-use-sse2=0|1            : Use SSE2 instructions              [1]
-  ocio-use-boost=0|1           : Use boost shared_ptr               [0]
-  ocio-hide-inlines=0|1        : Hide inline functions              [1]""")
+  ocio-name                       : Library name                        ["OpenColorIO"]
+  ocio-suffix=<str>               : Library suffix                      [""]
+                                    (Ignored if ocio-name flag is set)
+  ocio-namespace=<str>            : Library namespace                   ["OpenColorIO"]
+  ocio-use-sse2=0|1               : Use SSE2 instructions               [1]
+  ocio-use-boost=0|1              : Use boost shared_ptr                [0]
+  ocio-hide-inlines=0|1           : Hide inline functions               [1]
+  ocio-opengl-use-static-ocio=0|1 : Link OCIOOpenGL against static OCIO [1]""")
 
 excons.AddHelpTargets({"ocio-tools": "ociobakelut, ociocheck",
                        "ocio-static": "OCIO static library",
                        "ocio-shared": "OCIO shared library",
+                       "ocio-opengl": "OCIO OpenGL library",
                        "ocio-libs": "OCIO static and shared libraries",
                        "ocio": "ocio-shared, ocio-static, ocio-python, ociobakelut, ociocheck"})
 if OCIOName(True) == OCIOName(False):
@@ -365,16 +404,19 @@ targets = excons.DeclareTargets(env, projs)
 
 env.Depends(targets["ocio-shared"], InstallHeaders)
 env.Depends(targets["ocio-static"], InstallHeaders)
+env.Depends(targets["ocio-opengl"], InstallOpenGLHeaders)
 env.Alias("ocio-tests", tester)
 env.Alias("ocio-libs", targets["ocio-shared"])
 env.Alias("ocio-libs", targets["ocio-static"])
+env.Alias("ocio-libs", targets["ocio-opengl"])
 env.Alias("ocio", targets["ocio-shared"])
 env.Alias("ocio", targets["ocio-static"])
+env.Alias("ocio", targets["ocio-opengl"])
 env.Alias("ocio", targets["ocio-python"])
 env.Alias("ocio", targets["ociobakelut"])
 env.Alias("ocio", targets["ociocheck"])
 env.Alias("ocio-tools", targets["ociobakelut"])
 env.Alias("ocio-tools", targets["ociocheck"])
 
-Export("OCIOName OCIOPath RequireOCIO")
+Export("OCIOName OCIOPath RequireOCIO OCIOOpenGLName OCIOOpenGLPath RequireOCIOOpenGL")
 
