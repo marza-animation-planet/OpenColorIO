@@ -11,14 +11,19 @@ from excons.tools import boost
 from excons.tools import python
 from excons.tools import gl
 from excons.tools import glew
+import SCons.Script # pylint: disable=import-error
 
 
-if not os.path.isdir("./testdata/unittestsfiles"):
-   os.makedirs("./testdata/unittestsfiles")
-   tgz = tarfile.open("./testdata/unittestsfiles.tar.gz")
-   tgz.extractall("./testdata/unittestsfiles")
-   tgz.close()
+NoUnitTests = True
+if os.path.isfile("./testdata/unittestsfiles.tar.gz"):
+   if not os.path.isdir("./testdata/unittestsfiles"):
+      os.makedirs("./testdata/unittestsfiles")
+      tgz = tarfile.open("./testdata/unittestsfiles.tar.gz")
+      tgz.extractall("./testdata/unittestsfiles")
+      tgz.close()
+      NoUnitTests = False
 
+SCons.Script.ARGUMENTS["use-c++11"] = "1"
 
 env = excons.MakeBaseEnv()
 
@@ -37,7 +42,7 @@ ocio_hideinlines = (excons.GetArgument("ocio-hide-inlines", 1, int) != 0)
 ocio_namespace = excons.GetArgument("ocio-namespace", "OpenColorIO")
 ocio_use_boost = (excons.GetArgument("ocio-use-boost", 0, int) != 0)
 ocio_opengl_use_static_ocio = (excons.GetArgument("ocio-opengl-use-static-ocio", 1, int) != 0)
-ocio_version = (1, 1, 0)
+ocio_version = (2, 0, 0)
 
 ocio_config = {"OCIO_NAMESPACE"     : ocio_namespace,
                "OCIO_VERSION_MAJOR" : str(ocio_version[0]),
@@ -101,7 +106,7 @@ if rv["require"] is None:
    excons.PrintOnce("OCIO: Build TinyXML from sources ...")
    excons.Call("TinyXML", imp=["RequireTinyXml"])
    def TinyXmlRequire(env):
-      RequireTinyXml(env)
+      RequireTinyXml(env) # pylint: disable=undefined-variable
 else:
    TinyXmlRequire = rv["require"]
 
@@ -125,15 +130,15 @@ if not rv["require"]:
    excons.PrintOnce("OCIO: Build YAML-CPP from sources ...")
    excons.Call("yaml-cpp", imp=["RequireYamlCpp"])
    def YamlCppRequire(env):
-      RequireYamlCpp(env)
+      RequireYamlCpp(env) # pylint: disable=undefined-variable
 else:
    YamlCppRequire = rv["require"]
 
 libcustoms.append(YamlCppRequire)
 
 # LCMS setup (required only by ociobakelut)
-build_lcms2 = (len(COMMAND_LINE_TARGETS) == 0)
-for t in COMMAND_LINE_TARGETS:
+build_lcms2 = (len(SCons.Script.COMMAND_LINE_TARGETS) == 0)
+for t in SCons.Script.COMMAND_LINE_TARGETS:
    if t in ("ocio", "ocio-tools", "ociobakelut"):
       build_lcms2 = True
 
@@ -146,7 +151,7 @@ if not rv["require"]:
       excons.PrintOnce("OCIO: Build lcms2 from sources ...")
       excons.Call("Little-CMS", imp=["RequireLCMS2"])
       def Lcms2Require(env):
-         RequireLCMS2(env)
+         RequireLCMS2(env) # pylint: disable=undefined-variable
    else:
       def Lcms2Require(env):
          pass
@@ -210,9 +215,9 @@ def GeneratePyDoc(target, source, env):
    p.communicate()
    return None
 
-env["BUILDERS"]["GenerateConfig"] = Builder(action=Action(GenerateConfig, "Generating $TARGET ...", suffix=".h", src_suffix=".h.in"))
-env["BUILDERS"]["GenerateTester"] = Builder(action=Action(GenerateTester, "Generating $TARGET ...", suffix="", src_suffix=".in"))
-env["BUILDERS"]["GeneratePyDoc"] = Builder(action=Action(GeneratePyDoc, "Generating $TARGET ..."))
+env["BUILDERS"]["GenerateConfig"] = SCons.Script.Builder(action=SCons.Script.Action(GenerateConfig, "Generating $TARGET ...", suffix=".h", src_suffix=".h.in"))
+env["BUILDERS"]["GenerateTester"] = SCons.Script.Builder(action=SCons.Script.Action(GenerateTester, "Generating $TARGET ...", suffix="", src_suffix=".in"))
+env["BUILDERS"]["GeneratePyDoc"] = SCons.Script.Builder(action=SCons.Script.Action(GeneratePyDoc, "Generating $TARGET ..."))
 
 
 # OpenColorABI.h is generated directly in the output, avoid possible conflicts
@@ -299,9 +304,11 @@ projs = [
       "cflags": cflags,
       "cppflags": cppflags,
       "incdirs": libincdirs,
-      "srcs": excons.glob("src/core/*.cpp") +
-              excons.glob("src/core/md5/*.cpp") +
-              excons.glob("src/core/pystring/*.cpp"),
+      "srcs": excons.glob("src/OpenColorIO/*.cpp") +
+              excons.glob("src/OpenColorIO/fileformats/*.cpp") +
+              excons.glob("src/OpenColorIO/md5/*.cpp") +
+              excons.glob("src/OpenColorIO/ops/*.cpp") +
+              excons.glob("src/OpenColorIO/transforms/*.cpp"),
       "custom": libcustoms
    },
    {  "name": OCIOName(False),
@@ -362,24 +369,24 @@ projs = [
       "incdirs": ["src/apps/share"],
       "srcs": excons.glob("src/apps/ociocheck/*.cpp") + ["src/apps/share/strutil.cpp", "src/apps/share/argparse.cpp"],
       "custom": [lambda x: RequireOCIO(x, static=True)],
-   },
-   # Unit tests
-   {  "name": "ocio_core_tests",
-      "type": "program",
-      "alias": "ocio-tests",
-      "defs": defs + ["OCIO_UNIT_TEST",
-                      "OCIO_SOURCE_DIR=\"%s\"" % os.path.abspath(".").replace("\\", "/"),
-                      "OCIO_UNIT_TEST_FILES_DIR=\"%s\"" % os.path.abspath(".").replace("\\", "/") + "/testdata/unittestsfiles"],
-      "cflags": cflags,
-      "cppflags": cppflags,
-      "incdirs": libincdirs,
-      "srcs": excons.glob("src/core/*.cpp") +
-              excons.glob("src/core/md5/*.cpp") +
-              excons.glob("src/core/pystring/*.cpp"),
-      "custom": [lambda x: RequireOCIO(x, static=True)],
-      "post": [Action(RunTests, "Running Tests ...")]
    }
 ]
+if not NoUnitTests:
+   # Unit tests
+   projs.append({ "name": "ocio_core_tests",
+                  "type": "program",
+                  "alias": "ocio-tests",
+                  "defs": defs + ["OCIO_UNIT_TEST",
+                                  "OCIO_SOURCE_DIR=\"%s\"" % os.path.abspath(".").replace("\\", "/"),
+                                  "OCIO_UNIT_TEST_FILES_DIR=\"%s\"" % os.path.abspath(".").replace("\\", "/") + "/testdata/unittestsfiles"],
+                  "cflags": cflags,
+                  "cppflags": cppflags,
+                  "incdirs": libincdirs,
+                  "srcs": excons.glob("src/core/*.cpp") +
+                        excons.glob("src/core/md5/*.cpp") +
+                        excons.glob("src/core/pystring/*.cpp"),
+                  "custom": [lambda x: RequireOCIO(x, static=True)],
+                  "post": [SCons.Script.Action(RunTests, "Running Tests ...")] })
 
 excons.AddHelpOptions(opencolorio="""OPENCOLORIO OPTIONS
   ocio-name                       : Library name                        ["OpenColorIO"]
@@ -418,5 +425,5 @@ env.Alias("ocio", targets["ociocheck"])
 env.Alias("ocio-tools", targets["ociobakelut"])
 env.Alias("ocio-tools", targets["ociocheck"])
 
-Export("OCIOName OCIOPath RequireOCIO OCIOOpenGLName OCIOOpenGLPath RequireOCIOOpenGL")
+SCons.Script.Export("OCIOName OCIOPath RequireOCIO OCIOOpenGLName OCIOOpenGLPath RequireOCIOOpenGL")
 
