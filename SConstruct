@@ -8,6 +8,7 @@ import excons
 import subprocess
 from excons.tools import boost
 from excons.tools import python
+import SCons.Script # pylint: disable=import-error
 
 
 
@@ -91,7 +92,7 @@ if rv["require"] is None:
    excons.PrintOnce("OCIO: Build TinyXML from sources ...")
    excons.Call("TinyXML", imp=["RequireTinyXml"])
    def TinyXmlRequire(env):
-      RequireTinyXml(env)
+      RequireTinyXml(env) # pylint: disable=undefined-variable
 else:
    TinyXmlRequire = rv["require"]
 
@@ -115,15 +116,15 @@ if not rv["require"]:
    excons.PrintOnce("OCIO: Build YAML-CPP from sources ...")
    excons.Call("yaml-cpp", imp=["RequireYamlCpp"])
    def YamlCppRequire(env):
-      RequireYamlCpp(env)
+      RequireYamlCpp(env) # pylint: disable=undefined-variable
 else:
    YamlCppRequire = rv["require"]
 
 libcustoms.append(YamlCppRequire)
 
 # LCMS setup (required only by ociobakelut)
-build_lcms2 = (len(COMMAND_LINE_TARGETS) == 0)
-for t in COMMAND_LINE_TARGETS:
+build_lcms2 = (len(SCons.Script.COMMAND_LINE_TARGETS) == 0)
+for t in SCons.Script.COMMAND_LINE_TARGETS:
    if t in ("ocio", "ocio-tools", "ociobakelut"):
       build_lcms2 = True
 
@@ -136,7 +137,7 @@ if not rv["require"]:
       excons.PrintOnce("OCIO: Build lcms2 from sources ...")
       excons.Call("Little-CMS", imp=["RequireLCMS2"])
       def Lcms2Require(env):
-         RequireLCMS2(env)
+         RequireLCMS2(env) # pylint: disable=undefined-variable
    else:
       def Lcms2Require(env):
          pass
@@ -200,9 +201,9 @@ def GeneratePyDoc(target, source, env):
    p.communicate()
    return None
 
-env["BUILDERS"]["GenerateConfig"] = Builder(action=Action(GenerateConfig, "Generating $TARGET ...", suffix=".h", src_suffix=".h.in"))
-env["BUILDERS"]["GenerateTester"] = Builder(action=Action(GenerateTester, "Generating $TARGET ...", suffix="", src_suffix=".in"))
-env["BUILDERS"]["GeneratePyDoc"] = Builder(action=Action(GeneratePyDoc, "Generating $TARGET ..."))
+env["BUILDERS"]["GenerateConfig"] = SCons.Script.Builder(action=SCons.Script.Action(GenerateConfig, "Generating $TARGET ...", suffix=".h", src_suffix=".h.in"))
+env["BUILDERS"]["GenerateTester"] = SCons.Script.Builder(action=SCons.Script.Action(GenerateTester, "Generating $TARGET ...", suffix="", src_suffix=".in"))
+env["BUILDERS"]["GeneratePyDoc"] = SCons.Script.Builder(action=SCons.Script.Action(GeneratePyDoc, "Generating $TARGET ..."))
 
 
 # OpenColorABI.h is generated directly in the output, avoid possible conflicts
@@ -331,7 +332,7 @@ projs = [
               excons.glob("src/core/md5/*.cpp") +
               excons.glob("src/core/pystring/*.cpp"),
       "custom": [lambda x: RequireOCIO(x, static=True)],
-      "post": [Action(RunTests, "Running Tests ...")]
+      "post": [SCons.Script.Action(RunTests, "Running Tests ...")]
    }
 ]
 
@@ -367,5 +368,5 @@ env.Alias("ocio", targets["ociocheck"])
 env.Alias("ocio-tools", targets["ociobakelut"])
 env.Alias("ocio-tools", targets["ociocheck"])
 
-Export("OCIOName OCIOPath RequireOCIO")
+SCons.Script.Export("OCIOName OCIOPath RequireOCIO")
 
