@@ -1,30 +1,5 @@
-/*
-Copyright (c) 2003-2012 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
 
 #include "OpenColorIO_AE.h"
@@ -489,7 +464,7 @@ static PF_Err Process_Iterate(
 
         OCIO::PackedImageDesc img(rOut, i_data->width, 1, 4);
                                                 
-        i_data->context->processor()->apply(img);
+        i_data->context->cpu_processor()->apply(img);
     }
     catch(...)
     {
@@ -634,9 +609,10 @@ static PF_Err DoRender(
                 
                 if(arb_data->source == OCIO_SOURCE_ENVIRONMENT)
                 {
-                    char *file = std::getenv("OCIO");
+                    std::string env;
+                    OpenColorIO_AE_Context::getenvOCIO(env);
                     
-                    if(file == NULL)
+                    if(env.empty())
                         seq_data->status = STATUS_FILE_MISSING;
                 }
                 else if(arb_data->source == OCIO_SOURCE_STANDARD)
@@ -1012,9 +988,10 @@ static PF_Err GetExternalDependencies(
         }
         else if(extra->check_type == PF_DepCheckType_MISSING_DEPENDENCIES)
         {
-            char *file = std::getenv("OCIO");
+            std::string env;
+            OpenColorIO_AE_Context::getenvOCIO(env);
             
-            if(!file)
+            if(env.empty())
                 dependency = "$OCIO environment variable";
         }
     }

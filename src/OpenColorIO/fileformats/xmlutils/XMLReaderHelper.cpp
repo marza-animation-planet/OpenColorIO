@@ -1,30 +1,5 @@
-/*
-Copyright (c) 2018 Autodesk Inc., et al.
-All Rights Reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
 #include <sstream>
 
@@ -34,7 +9,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "ParseUtils.h"
 #include "Platform.h"
 
-OCIO_NAMESPACE_ENTER
+namespace OCIO_NAMESPACE
 {
 XmlReaderElement::XmlReaderElement(const std::string & name,
                                    unsigned int xmlLineNumber,
@@ -67,10 +42,17 @@ void XmlReaderElement::setContext(const std::string & name,
 void XmlReaderElement::throwMessage(const std::string & error) const
 {
     std::ostringstream os;
-    os << "Error parsing file (" << getXmlFile().c_str() << "). ";
-    os << "Error is: " << error.c_str();
-    os << " At line (" << getXmlLineNumber() << ")";
+    os << "At line " << getXmlLineNumber() << ": ";
+    os << error.c_str();
     throw Exception(os.str().c_str());
+}
+
+void XmlReaderElement::logParameterWarning(const char * param) const
+{
+    std::ostringstream oss;
+    oss << getXmlFile().c_str() << "(" << getXmlLineNumber() << "): ";
+    oss << "Unrecognized attribute '" << param << "' of '" << getName() << "'.";
+    LogWarning(oss.str().c_str());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -92,13 +74,17 @@ XmlReaderDummyElt::XmlReaderDummyElt(const std::string & name,
                         xmlFile)
 {
     std::ostringstream oss;
-    oss << "Ignore element '" << getName().c_str();
-    oss << "' (line " << getXmlLineNumber() << ") ";
-    oss << "where its parent is '" << getParent()->getName().c_str();
-    oss << "' (line " << getParent()->getXmlLineNumber() << ") ";
-    oss << (msg ? msg : "") << ": " << getXmlFile().c_str();
+    oss << getXmlFile().c_str() << "(" << getXmlLineNumber() << "): ";
+    oss << "Unrecognized element '" << getName();
+    oss << "' where its parent is '" << getParent()->getName().c_str();
+    oss << "' (" << getParent()->getXmlLineNumber() << ")";
+    if (msg)
+    {
+        oss << ": " << msg;
+    }
+    oss << ".";
 
-    LogDebug(oss.str());
+    LogWarning(oss.str());
 }
 
 const std::string & XmlReaderDummyElt::getIdentifier() const
@@ -115,7 +101,7 @@ void XmlReaderDescriptionElt::end()
     {
         // Note: eXpat automatically replaces escaped characters with 
         //       their original values.
-        getParent()->appendDescription(m_description);
+        getParent()->appendMetadata(getIdentifier(), m_description);
     }
 }
 
@@ -295,5 +281,4 @@ void XmlReaderSaturationElt::setRawData(const char* str, size_t len, unsigned in
     m_contentData += std::string(str, len) + " ";
 }
 
-}
-OCIO_NAMESPACE_EXIT
+} // namespace OCIO_NAMESPACE

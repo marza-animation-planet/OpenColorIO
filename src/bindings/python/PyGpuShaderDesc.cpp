@@ -1,212 +1,391 @@
-/*
-Copyright (c) 2003-2010 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+#include "PyGpuShaderCreator.h"
 
-#include <Python.h>
-#include <OpenColorIO/OpenColorIO.h>
-
-#include "PyUtil.h"
-#include "PyDoc.h"
-
-OCIO_NAMESPACE_ENTER
+namespace OCIO_NAMESPACE
 {
-    
-    ConstGpuShaderDescRcPtr GetConstGpuShaderDesc(PyObject * pyobject)
-    {
-        return GetConstPyOCIO<PyOCIO_GpuShaderDesc,
-            ConstGpuShaderDescRcPtr>(pyobject, PyOCIO_GpuShaderDescType);
-    }
-    
-    GpuShaderDescRcPtr GetEditableGpuShaderDesc(PyObject * pyobject)
-    {
-        return GetEditablePyOCIO<PyOCIO_GpuShaderDesc,
-            GpuShaderDescRcPtr>(pyobject, PyOCIO_GpuShaderDescType);
-    }
-    
-    namespace
-    {
+
+namespace
+{
+
+enum GpuShaderDescIterator
+{
+    IT_TEXTURE = 0,
+    IT_TEXTURE_3D,
+    IT_UNIFORM
+};
+
+using TextureIterator         = PyIterator<GpuShaderDescRcPtr, IT_TEXTURE>;
+using Texture3DIterator       = PyIterator<GpuShaderDescRcPtr, IT_TEXTURE_3D>;
+using UniformIterator         = PyIterator<GpuShaderDescRcPtr, IT_UNIFORM>;
+
+struct Texture
+{
+    std::string m_textureName;
+    std::string m_samplerName;
+    unsigned m_width;
+    unsigned m_height;
+    GpuShaderDesc::TextureType m_channel;
+    Interpolation m_interpolation;
+    GpuShaderDescRcPtr m_shaderDesc;
+    int m_index;
+};
+
+struct Texture3D
+{
+    std::string m_textureName;
+    std::string m_samplerName;
+    unsigned m_edgelen;
+    Interpolation m_interpolation;
+    GpuShaderDescRcPtr m_shaderDesc;
+    int m_index;
+};
+
+} // namespace
+
+void bindPyGpuShaderDesc(py::module & m)
+{
+    GpuShaderDescRcPtr DEFAULT = GpuShaderDesc::CreateShaderDesc();
+
+    auto clsGpuShaderDesc = 
+        py::class_<GpuShaderDesc, GpuShaderDescRcPtr, GpuShaderCreator>(
+            m.attr("GpuShaderDesc"));
+
+    auto clsUniformData = 
+        py::class_<GpuShaderDesc::UniformData>(
+            clsGpuShaderDesc, "UniformData");
+
+    auto clsUniformIterator = 
+        py::class_<UniformIterator>(
+            clsGpuShaderDesc, "UniformIterator");
+
+    auto clsTexture = 
+        py::class_<Texture>(
+            clsGpuShaderDesc, "Texture");
+
+    auto clsTextureIterator = 
+        py::class_<TextureIterator>(
+            clsGpuShaderDesc, "TextureIterator");
+
+    auto clsTexture3D = 
+        py::class_<Texture3D>(
+            clsGpuShaderDesc, "Texture3D");
+
+    auto clsTexture3DIterator = 
+        py::class_<Texture3DIterator>(
+            clsGpuShaderDesc, "Texture3DIterator");
+
+    clsGpuShaderDesc
+        .def_static("CreateLegacyShaderDesc", [](unsigned edgelen,
+                                                 GpuLanguage lang,
+                                                 const std::string & functionName,
+                                                 const std::string & pixelName,
+                                                 const std::string & resourcePrefix,
+                                                 const std::string & uid) 
+            {
+                GpuShaderDescRcPtr p = GpuShaderDesc::CreateLegacyShaderDesc(edgelen);
+                p->setLanguage(lang);
+                if (!functionName.empty())   { p->setFunctionName(functionName.c_str()); }
+                if (!pixelName.empty())      { p->setPixelName(pixelName.c_str()); }
+                if (!resourcePrefix.empty()) { p->setResourcePrefix(resourcePrefix.c_str()); }
+                if (!uid.empty())   { p->setUniqueID(uid.c_str()); }
+                return p;
+            }, 
+                    "edgeLen"_a,
+                    "language"_a = DEFAULT->getLanguage(),
+                    "functionName"_a = DEFAULT->getFunctionName(),
+                    "pixelName"_a = DEFAULT->getPixelName(),
+                    "resourcePrefix"_a = DEFAULT->getResourcePrefix(),
+                    "uid"_a = DEFAULT->getUniqueID(),
+                    DOC(GpuShaderDesc, CreateLegacyShaderDesc)) 
+        .def_static("CreateShaderDesc", [](GpuLanguage lang,
+                                           const std::string & functionName,
+                                           const std::string & pixelName,
+                                           const std::string & resourcePrefix,
+                                           const std::string & uid) 
+            {
+                GpuShaderDescRcPtr p = GpuShaderDesc::CreateShaderDesc();
+                p->setLanguage(lang);
+                if (!functionName.empty())   { p->setFunctionName(functionName.c_str()); }
+                if (!pixelName.empty())      { p->setPixelName(pixelName.c_str()); }
+                if (!resourcePrefix.empty()) { p->setResourcePrefix(resourcePrefix.c_str()); }
+                if (!uid.empty())   { p->setUniqueID(uid.c_str()); }
+                return p;
+            }, 
+                    "language"_a = DEFAULT->getLanguage(),
+                    "functionName"_a = DEFAULT->getFunctionName(),
+                    "pixelName"_a = DEFAULT->getPixelName(),
+                    "resourcePrefix"_a = DEFAULT->getResourcePrefix(),
+                    "uid"_a = DEFAULT->getUniqueID(),
+                    DOC(GpuShaderDesc, CreateShaderDesc))  
+
+        .def("clone", &GpuShaderDesc::clone, 
+             DOC(GpuShaderDesc, clone))
+        .def("getShaderText", &GpuShaderDesc::getShaderText,
+             DOC(GpuShaderDesc, getShaderText))
+        .def("getUniforms", [](GpuShaderDescRcPtr & self) 
+            {
+                return UniformIterator(self);
+            })
+
+        // 1D lut related methods
+        .def("addTexture", [](GpuShaderDescRcPtr & self,
+                              const std::string & textureName, 
+                              const std::string & samplerName, 
+                              unsigned width, unsigned height,
+                              GpuShaderDesc::TextureType channel, 
+                              Interpolation interpolation,
+                              const py::buffer & values)
+            {
+                py::buffer_info info = values.request();
+                ssize_t numChannels;
+
+                switch (channel)
+                {
+                    case GpuShaderDesc::TEXTURE_RED_CHANNEL:
+                        numChannels = 1;
+                        break;
+                    case GpuShaderDesc::TEXTURE_RGB_CHANNEL:
+                        numChannels = 3;
+                        break;
+                    default:
+                        throw Exception("Error: Unsupported texture type");
+                }
+
+                checkBufferType(info, py::dtype("float32"));
+                checkBufferSize(info, width*height*numChannels);
+
+                py::gil_scoped_release release;
+
+                self->addTexture(textureName.c_str(),
+                                 samplerName.c_str(), 
+                                 width, height,
+                                 channel, 
+                                 interpolation,
+                                 static_cast<float *>(info.ptr));
+            },
+             "textureName"_a, "samplerName"_a, "width"_a, "height"_a, "channel"_a, 
+             "interpolation"_a, "values"_a, 
+             DOC(GpuShaderCreator, addTexture))
+        .def("getTextures", [](GpuShaderDescRcPtr & self) 
+            {
+                return TextureIterator(self);
+            })
+
+        // 3D lut related methods
+        .def("add3DTexture", [](GpuShaderDescRcPtr & self,
+                                const std::string & textureName, 
+                                const std::string & samplerName, 
+                                unsigned edgelen,
+                                Interpolation interpolation,
+                                const py::buffer & values)
+            {
+                py::buffer_info info = values.request();
+                checkBufferType(info, py::dtype("float32"));
+                checkBufferSize(info, edgelen*edgelen*edgelen*3);
+
+                py::gil_scoped_release release;
+
+                self->add3DTexture(textureName.c_str(), 
+                                   samplerName.c_str(), 
+                                   edgelen,
+                                   interpolation,
+                                   static_cast<float *>(info.ptr));
+            },
+             "textureName"_a, "samplerName"_a, "edgeLen"_a, "interpolation"_a, "values"_a, 
+             DOC(GpuShaderCreator, add3DTexture))
+        .def("get3DTextures", [](GpuShaderDescRcPtr & self) 
+            {
+                return Texture3DIterator(self);
+            });
+
+    clsUniformData
+        .def(py::init<>())
+        .def(py::init<const GpuShaderDesc::UniformData &>(), "data"_a)
         
-        ///////////////////////////////////////////////////////////////////////
-        ///
+        .def_readwrite("type", &GpuShaderDesc::UniformData::m_type)
         
-        int PyOCIO_GpuShaderDesc_init(PyOCIO_GpuShaderDesc * self, PyObject * args, PyObject * kwds);
-        void PyOCIO_GpuShaderDesc_delete(PyOCIO_GpuShaderDesc * self, PyObject * args);
-        PyObject * PyOCIO_GpuShaderDesc_setLanguage(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_GpuShaderDesc_getLanguage(PyObject * self);
-        PyObject * PyOCIO_GpuShaderDesc_setFunctionName(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_GpuShaderDesc_getFunctionName(PyObject * self);
-        PyObject * PyOCIO_GpuShaderDesc_getCacheID(PyObject * self);
-        PyObject * PyOCIO_GpuShaderDesc_finalize(PyObject * self);
+        .def("getDouble", [](GpuShaderDesc::UniformData & self) -> double
+            {
+                return self.m_getDouble();
+            })
+        .def("getBool", [](GpuShaderDesc::UniformData & self) -> bool
+            {
+                return self.m_getBool();
+            })
+        .def("getFloat3", [](GpuShaderDesc::UniformData & self) -> Float3
+            {
+                return self.m_getFloat3();
+            })
+        .def("getVectorFloat", [](GpuShaderDesc::UniformData & self) -> py::array
+            {
+                return py::array(py::dtype("float32"),
+                                 { self.m_vectorFloat.m_getSize() },
+                                 { sizeof(float) }, 
+                                 self.m_vectorFloat.m_getVector());
+            })
+        .def("getVectorInt", [](GpuShaderDesc::UniformData & self) -> py::array
+            {
+                return py::array(py::dtype("intc"),
+                                 { self.m_vectorInt.m_getSize() },
+                                 { sizeof(int) }, 
+                                 self.m_vectorInt.m_getVector());
+            });
+
+    clsUniformIterator
+        .def("__len__", [](UniformIterator & it) 
+            { 
+                return it.m_obj->getNumUniforms(); 
+            })
+        .def("__getitem__", [](UniformIterator & it, int i)
+            { 
+                // GpuShaderDesc provides index check with exception
+                GpuShaderDesc::UniformData data;
+                const char * name = it.m_obj->getUniform(i, data);
+
+                return py::make_tuple(name, data);
+            })
+        .def("__iter__", [](UniformIterator & it) -> UniformIterator & 
+            { 
+                return it; 
+            })
+        .def("__next__", [](UniformIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumUniforms());
+
+                GpuShaderDesc::UniformData data;
+                const char * name = it.m_obj->getUniform(i, data);
+
+                return py::make_tuple(name, data);
+            });
+
+    clsTexture
+        .def_readonly("textureName", &Texture::m_textureName)
+        .def_readonly("samplerName", &Texture::m_samplerName)
+        .def_readonly("width", &Texture::m_width)
+        .def_readonly("height", &Texture::m_height)
+        .def_readonly("channel", &Texture::m_channel)
+        .def_readonly("interpolation", &Texture::m_interpolation)
+        .def("getValues", [](Texture & self)
+            {
+                py::gil_scoped_release release;
+            
+                const float * values;
+                self.m_shaderDesc->getTextureValues(self.m_index, values);
+            
+                ssize_t numChannels;
+                switch (self.m_channel)
+                {
+                case GpuShaderDesc::TEXTURE_RED_CHANNEL:
+                    numChannels = 1;
+                    break;
+                case GpuShaderDesc::TEXTURE_RGB_CHANNEL:
+                    numChannels = 3;
+                    break;
+                default:
+                    throw Exception("Error: Unsupported texture type");
+                }
+            
+                py::gil_scoped_acquire acquire;
+            
+                return py::array(py::dtype("float32"),
+                                 { self.m_height * self.m_width * numChannels },
+                                 { sizeof(float) }, 
+                                 values);
+            }, DOC(GpuShaderDesc, getTextureValues));
+
+    clsTextureIterator
+        .def("__len__", [](TextureIterator & it) 
+            { 
+                return it.m_obj->getNumTextures(); 
+            })
+        .def("__getitem__", [](TextureIterator & it, int i) -> Texture
+            { 
+                // GpuShaderDesc provides index check with exception
+                const char * textureName = nullptr;
+                const char * samplerName = nullptr;
+                unsigned width, height;
+                GpuShaderDesc::TextureType channel;
+                Interpolation interpolation;
+                it.m_obj->getTexture(i, textureName, samplerName, width, height, channel, 
+                                     interpolation);
+
+                return { textureName, samplerName, width, height, channel, interpolation,
+                         it.m_obj, i};
+            })
+        .def("__iter__", [](TextureIterator & it) -> TextureIterator & 
+            { 
+                return it; 
+            })
+        .def("__next__", [](TextureIterator & it) -> Texture
+            {
+                int i = it.nextIndex(it.m_obj->getNumTextures());
+
+                const char * textureName = nullptr;
+                const char * samplerName = nullptr;
+                unsigned width, height;
+                GpuShaderDesc::TextureType channel;
+                Interpolation interpolation;
+                it.m_obj->getTexture(i, textureName, samplerName, width, height, channel, 
+                                     interpolation);
+
+                return { textureName, samplerName, width, height, channel, interpolation,
+                         it.m_obj, i};
+            });
+
+    clsTexture3D
+        .def_readonly("textureName", &Texture3D::m_textureName)
+        .def_readonly("samplerName", &Texture3D::m_samplerName)
+        .def_readonly("edgeLen", &Texture3D::m_edgelen)
+        .def_readonly("interpolation", &Texture3D::m_interpolation)
+        .def("getValues", [](Texture3D & self)
+            {
+                py::gil_scoped_release release;
         
-        ///////////////////////////////////////////////////////////////////////
-        ///
+                const float * values;
+                self.m_shaderDesc->get3DTextureValues(self.m_index, values);
         
-        PyMethodDef PyOCIO_GpuShaderDesc_methods[] = {
-            { "setLanguage",
-            PyOCIO_GpuShaderDesc_setLanguage, METH_VARARGS, GPUSHADERDESC_SETLANGUAGE__DOC__ },
-            { "getLanguage",
-            (PyCFunction) PyOCIO_GpuShaderDesc_getLanguage, METH_NOARGS, GPUSHADERDESC_GETLANGUAGE__DOC__ },
-            { "setFunctionName",
-            PyOCIO_GpuShaderDesc_setFunctionName, METH_VARARGS, GPUSHADERDESC_SETFUNCTIONNAME__DOC__ },            
-            { "getFunctionName",
-            (PyCFunction) PyOCIO_GpuShaderDesc_getFunctionName, METH_NOARGS, GPUSHADERDESC_GETFUNCTIONNAME__DOC__ },
-            { "getCacheID",
-            (PyCFunction) PyOCIO_GpuShaderDesc_getCacheID, METH_NOARGS, GPUSHADERDESC_GETCACHEID__DOC__ },
-            { "finalize",
-            (PyCFunction) PyOCIO_GpuShaderDesc_finalize, METH_NOARGS, GPUSHADERDESC_FINALIZE__DOC__ },
-            { NULL, NULL, 0, NULL }
-        };
+                py::gil_scoped_acquire acquire;
         
-    }
-    
-    ///////////////////////////////////////////////////////////////////////////
-    ///
-    
-    PyTypeObject PyOCIO_GpuShaderDescType = {
-        PyVarObject_HEAD_INIT(NULL, 0)              //ob_size
-        OCIO_PYTHON_NAMESPACE(GpuShaderDesc),       //tp_name
-        sizeof(PyOCIO_GpuShaderDesc),               //tp_basicsize
-        0,                                          //tp_itemsize
-        (destructor)PyOCIO_GpuShaderDesc_delete,    //tp_dealloc
-        0,                                          //tp_print
-        0,                                          //tp_getattr
-        0,                                          //tp_setattr
-        0,                                          //tp_compare
-        0,                                          //tp_repr
-        0,                                          //tp_as_number
-        0,                                          //tp_as_sequence
-        0,                                          //tp_as_mapping
-        0,                                          //tp_hash 
-        0,                                          //tp_call
-        0,                                          //tp_str
-        0,                                          //tp_getattro
-        0,                                          //tp_setattro
-        0,                                          //tp_as_buffer
-        Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,   //tp_flags
-        GPUSHADERDESC__DOC__,                       //tp_doc 
-        0,                                          //tp_traverse 
-        0,                                          //tp_clear 
-        0,                                          //tp_richcompare 
-        0,                                          //tp_weaklistoffset 
-        0,                                          //tp_iter 
-        0,                                          //tp_iternext 
-        PyOCIO_GpuShaderDesc_methods,               //tp_methods 
-        0,                                          //tp_members 
-        0,                                          //tp_getset 
-        0,                                          //tp_base 
-        0,                                          //tp_dict 
-        0,                                          //tp_descr_get 
-        0,                                          //tp_descr_set 
-        0,                                          //tp_dictoffset 
-        (initproc) PyOCIO_GpuShaderDesc_init,       //tp_init 
-        0,                                          //tp_alloc 
-        0,                                          //tp_new 
-        0,                                          //tp_free
-        0,                                          //tp_is_gc
-    };
-    
-    namespace
-    {
-        
-        ///////////////////////////////////////////////////////////////////////
-        ///
-        
-        int PyOCIO_GpuShaderDesc_init(PyOCIO_GpuShaderDesc* self, PyObject * /*args*/, PyObject * /*kwds*/)
-        {
-            OCIO_PYTRY_ENTER()
-            return BuildPyObject<PyOCIO_GpuShaderDesc, ConstGpuShaderDescRcPtr,
-                GpuShaderDescRcPtr>(self, GpuShaderDesc::CreateLegacyShaderDesc(32));
-            OCIO_PYTRY_EXIT(-1)
-        }
-        
-        void PyOCIO_GpuShaderDesc_delete(PyOCIO_GpuShaderDesc *self, PyObject * /*args*/)
-        {
-            DeletePyObject<PyOCIO_GpuShaderDesc>(self);
-        }
-        
-        PyObject * PyOCIO_GpuShaderDesc_setLanguage(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* lang = 0;
-            if (!PyArg_ParseTuple(args, "s:setLanguage",
-                &lang)) return NULL;
-            GpuShaderDescRcPtr desc = GetEditableGpuShaderDesc(self);
-            desc->setLanguage(GpuLanguageFromString(lang));
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_GpuShaderDesc_getLanguage(PyObject * self)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstGpuShaderDescRcPtr desc = GetConstGpuShaderDesc(self);
-            GpuLanguage lang = desc->getLanguage();
-            return PyString_FromString(GpuLanguageToString(lang));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_GpuShaderDesc_setFunctionName(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* name = 0;
-            if (!PyArg_ParseTuple(args, "s:setFunctionName",
-                &name)) return NULL;
-            GpuShaderDescRcPtr desc = GetEditableGpuShaderDesc(self);
-            desc->setFunctionName(name);
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_GpuShaderDesc_getFunctionName(PyObject * self)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstGpuShaderDescRcPtr desc = GetConstGpuShaderDesc(self);
-            return PyString_FromString(desc->getFunctionName());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_GpuShaderDesc_getCacheID(PyObject * self)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstGpuShaderDescRcPtr desc = GetConstGpuShaderDesc(self);
-            return PyString_FromString(desc->getCacheID());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_GpuShaderDesc_finalize(PyObject * self)
-        {
-            OCIO_PYTRY_ENTER()
-            GpuShaderDescRcPtr desc = GetEditableGpuShaderDesc(self);
-            desc->finalize();
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-    } // anon namespace
-    
+                return py::array(py::dtype("float32"),
+                                 { self.m_edgelen * self.m_edgelen * self.m_edgelen * 3 },
+                                 { sizeof(float) }, 
+                                 values);
+            }, DOC(GpuShaderDesc, get3DTextureValues));
+
+    clsTexture3DIterator
+        .def("__len__", [](Texture3DIterator & it) 
+            { 
+                return it.m_obj->getNum3DTextures(); 
+            })
+        .def("__getitem__", [](Texture3DIterator & it, int i) -> Texture3D
+            { 
+                // GpuShaderDesc provides index check with exception
+                const char * textureName = nullptr;
+                const char * samplerName = nullptr;
+                unsigned edgelen;
+                Interpolation interpolation;
+                it.m_obj->get3DTexture(i, textureName, samplerName, edgelen, interpolation);
+
+                return { textureName, samplerName, edgelen, interpolation, it.m_obj, i };
+            })
+        .def("__iter__", [](Texture3DIterator & it) -> Texture3DIterator & 
+            { 
+                return it; 
+            })
+        .def("__next__", [](Texture3DIterator & it) -> Texture3D
+            {
+                int i = it.nextIndex(it.m_obj->getNum3DTextures());
+
+                const char * textureName = nullptr;
+                const char * samplerName = nullptr;
+                unsigned edgelen;
+                Interpolation interpolation;
+                it.m_obj->get3DTexture(i, textureName, samplerName, edgelen, interpolation);
+
+                return { textureName, samplerName, edgelen, interpolation, it.m_obj, i };
+            });
 }
-OCIO_NAMESPACE_EXIT
+
+} // namespace OCIO_NAMESPACE

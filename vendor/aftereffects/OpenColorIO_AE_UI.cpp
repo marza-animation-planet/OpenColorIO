@@ -1,30 +1,5 @@
-/*
-Copyright (c) 2003-2012 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
 
 #include "OpenColorIO_AE.h"
@@ -350,10 +325,11 @@ static PF_Err DrawEvent(
                 
                 if(arb_data->source == OCIO_SOURCE_ENVIRONMENT)
                 {
-                    char *file = std::getenv("OCIO");
+                    std::string env;
+                    OpenColorIO_AE_Context::getenvOCIO(env);
                     
-                    if(file)
-                        file_string = file;
+                    if(!env.empty())
+                        file_string = env;
                 }
                 else
                 {
@@ -440,7 +416,14 @@ static PF_Err DrawEvent(
                     // Invert button
                     bot.MoveTo(panel_left + BUTTONS_INDENT_H, buttons_top);
                     
-                    DrawButton(bot, "Invert", BUTTON_WIDTH, arb_data->invert);
+                    DrawButton(bot, "Invert", BUTTON_WIDTH, arb_data->invert > OCIO_INVERT_OFF);
+                    
+                    if(arb_data->invert == OCIO_INVERT_EXACT)
+                    {
+                        bot.Move(BUTTON_WIDTH + FIELD_TEXT_INDENT_H, BUTTON_HEIGHT * 3 / 4);
+                        
+                        bot.DrawString("Exact");
+                    }
                     
                     // interpolation menu
                     int buttons_bottom = buttons_top + BUTTON_HEIGHT;
@@ -450,6 +433,7 @@ static PF_Err DrawEvent(
                     const char *txt =   arb_data->interpolation == OCIO_INTERP_NEAREST ? "Nearest Neighbor" :
                                         arb_data->interpolation == OCIO_INTERP_LINEAR ? "Linear" :
                                         arb_data->interpolation == OCIO_INTERP_TETRAHEDRAL ? "Tetrahedral" :
+                                        arb_data->interpolation == OCIO_INTERP_CUBIC ? "Cubic" :
                                         arb_data->interpolation == OCIO_INTERP_BEST ? "Best" :
                                         "Unknown";
                     
@@ -655,7 +639,7 @@ static void DoClickPath(
             
             if(arb_data->action == OCIO_ACTION_LUT)
             {
-                arb_data->invert = FALSE;
+                arb_data->invert = OCIO_INVERT_OFF;
                 arb_data->interpolation = OCIO_INTERP_LINEAR;
             }
             else
@@ -759,11 +743,12 @@ static void DoClickConfig(
         if(choice == 0)
         {
             // $OCIO
-            char *file = std::getenv("OCIO");
+            std::string env;
+            OpenColorIO_AE_Context::getenvOCIO(env);
             
-            if(file)
+            if(!env.empty())
             {
-                Path path(file, GetProjectDir(in_data));
+                Path path(env, GetProjectDir(in_data));
                 
                 new_context = new OpenColorIO_AE_Context(path.full_path(),
                                                             OCIO_SOURCE_ENVIRONMENT);
@@ -826,7 +811,7 @@ static void DoClickConfig(
                 
                 if(arb_data->action == OCIO_ACTION_LUT)
                 {
-                    arb_data->invert = FALSE;
+                    arb_data->invert = OCIO_INVERT_OFF;
                     arb_data->interpolation = OCIO_INTERP_LINEAR;
                 }
                 else
@@ -882,9 +867,13 @@ static void DoClickConvertDisplay(
             // doing it this way so that any exceptions thrown by setupLUT
             // because the LUT can't be inverted are thrown before
             // I actually chenge the ArbData setting
-            seq_data->context->setupLUT(!arb_data->invert, arb_data->interpolation);
+            const OCIO_Invert new_invert = (arb_data->invert == OCIO_INVERT_OFF ?
+                                            (event_extra->u.do_click.modifiers == PF_Mod_NONE ? OCIO_INVERT_ON : OCIO_INVERT_EXACT) :
+                                            OCIO_INVERT_OFF);
             
-            arb_data->invert = !arb_data->invert;
+            seq_data->context->setupLUT(new_invert, arb_data->interpolation);
+            
+            arb_data->invert = new_invert;
         
             params[OCIO_DATA]->uu.change_flags = PF_ChangeFlag_CHANGED_VALUE;
         }
@@ -1037,13 +1026,15 @@ static void DoClickMenus(
                     menu_items.push_back("Nearest Neighbor");
                     menu_items.push_back("Linear");
                     menu_items.push_back("Tetrahedral");
+                    menu_items.push_back("Cubic");
                     menu_items.push_back("(-");
                     menu_items.push_back("Best");
                     
                     selected_item = arb_data->interpolation == OCIO_INTERP_NEAREST ? 0 :
                                     arb_data->interpolation == OCIO_INTERP_LINEAR ? 1 :
                                     arb_data->interpolation == OCIO_INTERP_TETRAHEDRAL ? 2 :
-                                    arb_data->interpolation == OCIO_INTERP_BEST ? 4 :
+                                    arb_data->interpolation == OCIO_INTERP_CUBIC ? 3 :
+                                    arb_data->interpolation == OCIO_INTERP_BEST ? 5 :
                                     -1;
                 }
             }
@@ -1103,6 +1094,7 @@ static void DoClickMenus(
                     {
                         arb_data->interpolation =   result == 0 ? OCIO_INTERP_NEAREST :
                                                     result == 2 ? OCIO_INTERP_TETRAHEDRAL :
+                                                    result == 3 ? OCIO_INTERP_CUBIC :
                                                     result == 4 ? OCIO_INTERP_BEST :
                                                     OCIO_INTERP_LINEAR;
                                                 

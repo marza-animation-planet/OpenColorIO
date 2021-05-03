@@ -1,30 +1,5 @@
-/*
-Copyright (c) 2003-2010 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
 
 #ifndef INCLUDED_OCIO_CDLTRANSFORM_H
@@ -35,16 +10,78 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <OpenColorIO/OpenColorIO.h>
 
-OCIO_NAMESPACE_ENTER
+#include "ops/cdl/CDLOpData.h"
+
+namespace OCIO_NAMESPACE
 {
-    typedef std::map<std::string,CDLTransformRcPtr> CDLTransformMap;
-    typedef std::vector<CDLTransformRcPtr> CDLTransformVec;
-    
-    void ClearCDLTransformFileCache();
-    
-    void LoadCDL(CDLTransform * cdl, const char * xml);
-    
-}
-OCIO_NAMESPACE_EXIT
+static constexpr char METADATA_INPUT_DESCRIPTION[] = "InputDescription";
+static constexpr char METADATA_VIEWING_DESCRIPTION[] = "ViewingDescription";
+static constexpr char METADATA_SOP_DESCRIPTION[] = "SOPDescription";
+static constexpr char METADATA_SAT_DESCRIPTION[] = "SATDescription";
+
+class CDLTransformImpl;
+typedef OCIO_SHARED_PTR<CDLTransformImpl> CDLTransformImplRcPtr;
+
+typedef std::map<std::string, CDLTransformImplRcPtr> CDLTransformMap;
+typedef std::vector<CDLTransformImplRcPtr> CDLTransformVec;
+
+class CDLTransformImpl : public CDLTransform
+{
+public:
+    static CDLTransformImplRcPtr Create();
+
+    CDLTransformImpl() = default;
+    CDLTransformImpl(const CDLTransformImpl &) = delete;
+    CDLTransformImpl & operator=(const CDLTransformImpl &) = delete;
+    virtual ~CDLTransformImpl() = default;
+
+    TransformRcPtr createEditableCopy() const override;
+
+    TransformDirection getDirection() const noexcept override;
+    void setDirection(TransformDirection dir) noexcept override;
+
+    FormatMetadata & getFormatMetadata() noexcept override;
+    const FormatMetadata & getFormatMetadata() const noexcept override;
+
+    void validate() const override;
+
+    bool equals(const CDLTransform & other) const noexcept override;
+
+    CDLStyle getStyle() const override;
+    void setStyle(CDLStyle style) override;
+
+    void getSlope(double * rgb) const override;
+    void setSlope(const double * rgb) override;
+
+    void getOffset(double * rgb) const override;
+    void setOffset(const double * rgb) override;
+
+    void getPower(double * rgb) const override;
+    void setPower(const double * rgb) override;
+
+    void getSOP(double * vec9) const override;
+    void setSOP(const double * vec9) override;
+
+    double getSat() const override;
+    void setSat(double sat) override;
+
+    void getSatLumaCoefs(double * rgb) const override;
+
+    const char * getID() const override;
+    void setID(const char * id) override;
+    const char * getFirstSOPDescription() const override;
+    void setFirstSOPDescription(const char * description) override;
+
+    CDLOpData & data() noexcept { return m_data; }
+    const CDLOpData & data() const noexcept { return m_data; }
+
+    static void deleter(CDLTransform * t);
+
+private:
+    mutable std::string m_xml;
+    CDLOpData m_data;
+};
+
+} // namespace OCIO_NAMESPACE
 
 #endif

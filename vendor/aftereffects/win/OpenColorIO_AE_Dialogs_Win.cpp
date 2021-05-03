@@ -1,30 +1,5 @@
-/*
-Copyright (c) 2003-2012 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
 
 #include "OpenColorIO_AE_Dialogs.h"
@@ -34,7 +9,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <Windows.h>
 #include <Shlobj.h>
 #include <Icm.h>
-
+#include <assert.h>
 
 #include "lcms2.h"
 
@@ -85,7 +60,7 @@ static void MakeFilterText(char *filter_text,
     char combined_entry[512];
     int combined_length = 0;
 
-    char seperate_entries[512];
+    char seperate_entries[1024];
     int seperate_length = 0;
 
     AppendString(combined_entry, combined_length, "All OCIO files");
@@ -112,21 +87,102 @@ static void MakeFilterText(char *filter_text,
     AppendNull(combined_entry, combined_length);
 
 
+    assert(((do_combined ? combined_length : 0) + seperate_length) < 1024);
+
     char *in = combined_entry;
     char *out = filter_text;
 
     if(do_combined)
     {
+        assert(combined_length < 512);
+
         for(int i=0; i < combined_length; i++)
             *out++ = *in++;
     }
 
     in = seperate_entries;
 
+    assert(seperate_length < 1024);
+
     for(int i=0; i < seperate_length; i++)
         *out++ = *in++;
 }
 
+
+// Oy, what a pain in the neck.  AE uses a 4 byte struct alignment, which messes with
+// GetSaveFileName because it's struct sensitive (especially the part about the struct size).
+// This pragma temporarily sets us back to 8 bytes, but since OPENFILENAME has already been
+// victimized, we copy it here and replace it with our own myOPENFILENAME.
+#pragma pack(push, 8)
+typedef struct mytagOFNA {
+    DWORD        lStructSize;
+    HWND         hwndOwner;
+    HINSTANCE    hInstance;
+    LPCSTR       lpstrFilter;
+    LPSTR        lpstrCustomFilter;
+    DWORD        nMaxCustFilter;
+    DWORD        nFilterIndex;
+    LPSTR        lpstrFile;
+    DWORD        nMaxFile;
+    LPSTR        lpstrFileTitle;
+    DWORD        nMaxFileTitle;
+    LPCSTR       lpstrInitialDir;
+    LPCSTR       lpstrTitle;
+    DWORD        Flags;
+    WORD         nFileOffset;
+    WORD         nFileExtension;
+    LPCSTR       lpstrDefExt;
+    LPARAM       lCustData;
+    LPOFNHOOKPROC lpfnHook;
+    LPCSTR       lpTemplateName;
+#ifdef _MAC
+    LPEDITMENU   lpEditInfo;
+    LPCSTR       lpstrPrompt;
+#endif
+#if (_WIN32_WINNT >= 0x0500)
+    void *        pvReserved;
+    DWORD        dwReserved;
+    DWORD        FlagsEx;
+#endif // (_WIN32_WINNT >= 0x0500)
+} myOPENFILENAMEA, *myLPOPENFILENAMEA;
+typedef struct mytagOFNW {
+    DWORD        lStructSize;
+    HWND         hwndOwner;
+    HINSTANCE    hInstance;
+    LPCWSTR      lpstrFilter;
+    LPWSTR       lpstrCustomFilter;
+    DWORD        nMaxCustFilter;
+    DWORD        nFilterIndex;
+    LPWSTR       lpstrFile;
+    DWORD        nMaxFile;
+    LPWSTR       lpstrFileTitle;
+    DWORD        nMaxFileTitle;
+    LPCWSTR      lpstrInitialDir;
+    LPCWSTR      lpstrTitle;
+    DWORD        Flags;
+    WORD         nFileOffset;
+    WORD         nFileExtension;
+    LPCWSTR      lpstrDefExt;
+    LPARAM       lCustData;
+    LPOFNHOOKPROC lpfnHook;
+    LPCWSTR      lpTemplateName;
+#ifdef _MAC
+    LPEDITMENU   lpEditInfo;
+    LPCSTR       lpstrPrompt;
+#endif
+#if (_WIN32_WINNT >= 0x0500)
+    void *        pvReserved;
+    DWORD        dwReserved;
+    DWORD        FlagsEx;
+#endif // (_WIN32_WINNT >= 0x0500)
+} myOPENFILENAMEW, *myLPOPENFILENAMEW;
+#ifdef UNICODE
+typedef myOPENFILENAMEW myOPENFILENAME;
+typedef myLPOPENFILENAMEW myLPOPENFILENAME;
+#else
+typedef myOPENFILENAMEA myOPENFILENAME;
+typedef myLPOPENFILENAMEA myLPOPENFILENAME;
+#endif // UNICODE
 
 bool OpenFile(char *path, int buf_len, const ExtensionMap &extensions, const void *hwnd)
 {
@@ -137,7 +193,7 @@ bool OpenFile(char *path, int buf_len, const ExtensionMap &extensions, const voi
     MakeFilterText(my_lpstrFilter, extensions, true);
 
 
-    OPENFILENAME lpofn;
+    myOPENFILENAME lpofn;
 
     lpofn.lStructSize = sizeof(lpofn);
     lpofn.hwndOwner = (HWND)hwnd;
@@ -164,7 +220,7 @@ bool OpenFile(char *path, int buf_len, const ExtensionMap &extensions, const voi
     lpofn.lpTemplateName = NULL;
     lpofn.lStructSize = sizeof(lpofn);
 
-    return GetOpenFileName(&lpofn);
+    return GetOpenFileName((LPOPENFILENAME)&lpofn);
 }
 
 
@@ -177,7 +233,7 @@ bool SaveFile(char *path, int buf_len, const ExtensionMap &extensions, const voi
     MakeFilterText(my_lpstrFilter, extensions, false);
 
 
-    OPENFILENAME lpofn;
+    myOPENFILENAME lpofn;
 
     lpofn.lStructSize = sizeof(lpofn);
     lpofn.hwndOwner = (HWND)hwnd;
@@ -204,8 +260,9 @@ bool SaveFile(char *path, int buf_len, const ExtensionMap &extensions, const voi
     lpofn.lpTemplateName = NULL;
     lpofn.lStructSize = sizeof(lpofn);
 
-    return GetSaveFileName(&lpofn);
+    return GetSaveFileName((LPOPENFILENAME)&lpofn);
 }
+#pragma pack(pop)
 
 // dialog item IDs
 enum {
@@ -417,7 +474,7 @@ int PopUpMenu(const MenuVec &menu_items, int selected_index, const void *hwnd)
             }
             else if(label == "$OCIO")
             {
-                char *file = std::getenv("OCIO");
+                char *file = std::getenv("OCIO"); // not using OpenColorIO_AE_Context::getenvOCIO() here so Photoshop can use this file too 
 
                 if(file == NULL)
                     flags |= MF_GRAYED;
@@ -493,7 +550,7 @@ bool ColorSpacePopUpMenu(OCIO::ConstConfigRcPtr config, std::string &colorSpace,
         
         std::string colorSpacePath;
         
-        if(family == NULL)
+        if(family == NULL || family == std::string(""))
         {
             colorSpacePath = colorSpaceName;
         }

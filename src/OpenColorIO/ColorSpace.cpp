@@ -1,30 +1,5 @@
-/*
-Copyright (c) 2003-2010 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
 #include <cstring>
 #include <sstream>
@@ -32,387 +7,427 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <OpenColorIO/OpenColorIO.h>
 
-#include "pystring/pystring.h"
+#include "TokensManager.h"
+#include "PrivateTypes.h"
+#include "utils/StringUtils.h"
 
 
-OCIO_NAMESPACE_ENTER
+namespace OCIO_NAMESPACE
 {
-    ColorSpaceRcPtr ColorSpace::Create()
-    {
-        return ColorSpaceRcPtr(new ColorSpace(), &deleter);
-    }
-    
-    void ColorSpace::deleter(ColorSpace* c)
-    {
-        delete c;
-    }
-    
-    
-    class ColorSpace::Impl
-    {
-    public:
-        std::string name_;
-        std::string family_;
-        std::string equalityGroup_;
-        std::string description_;
-        
-        BitDepth bitDepth_;
-        bool isData_;
-        
-        Allocation allocation_;
-        std::vector<float> allocationVars_;
-        
-        TransformRcPtr toRefTransform_;
-        TransformRcPtr fromRefTransform_;
-        
-        bool toRefSpecified_;
-        bool fromRefSpecified_;
 
-        typedef std::vector<std::string> Categories;
-        Categories categories_;
-        
-        Impl() :
-            bitDepth_(BIT_DEPTH_UNKNOWN),
-            isData_(false),
-            allocation_(ALLOCATION_UNIFORM),
-            toRefSpecified_(false),
-            fromRefSpecified_(false)
-        { }
-        
-        ~Impl()
-        { }
-        
-        Impl& operator= (const Impl & rhs)
+class ColorSpace::Impl
+{
+public:
+    std::string m_name;
+    std::string m_family;
+    std::string m_equalityGroup;
+    std::string m_description;
+    std::string m_encoding;
+    StringUtils::StringVec m_aliases;
+
+    BitDepth m_bitDepth{ BIT_DEPTH_UNKNOWN };
+    bool m_isData{ false };
+
+    ReferenceSpaceType m_referenceSpaceType{ REFERENCE_SPACE_SCENE };
+
+    Allocation m_allocation{ ALLOCATION_UNIFORM };
+    std::vector<float> m_allocationVars;
+
+    TransformRcPtr m_toRefTransform;
+    TransformRcPtr m_fromRefTransform;
+
+    bool m_toRefSpecified{ false };
+    bool m_fromRefSpecified{ false };
+
+    TokensManager m_categories;
+
+    Impl() = delete;
+    explicit Impl(ReferenceSpaceType referenceSpace)
+        : m_referenceSpaceType(referenceSpace)
+    {
+    }
+
+    Impl(const Impl &) = delete;
+
+    ~Impl() = default;
+
+    Impl& operator= (const Impl & rhs)
+    {
+        if (this != &rhs)
         {
-            if (this != &rhs)
+            m_name = rhs.m_name;
+            m_aliases = rhs.m_aliases;
+            m_family = rhs.m_family;
+            m_equalityGroup = rhs.m_equalityGroup;
+            m_description = rhs.m_description;
+            m_encoding = rhs.m_encoding;
+            m_bitDepth = rhs.m_bitDepth;
+            m_isData = rhs.m_isData;
+            m_referenceSpaceType = rhs.m_referenceSpaceType;
+            m_allocation = rhs.m_allocation;
+            m_allocationVars = rhs.m_allocationVars;
+
+            m_toRefTransform = rhs.m_toRefTransform?
+                rhs.m_toRefTransform->createEditableCopy()
+                : rhs.m_toRefTransform;
+
+            m_fromRefTransform = rhs.m_fromRefTransform?
+                rhs.m_fromRefTransform->createEditableCopy()
+                : rhs.m_fromRefTransform;
+
+            m_toRefSpecified = rhs.m_toRefSpecified;
+            m_fromRefSpecified = rhs.m_fromRefSpecified;
+            m_categories = rhs.m_categories;
+        }
+        return *this;
+    }
+
+};
+
+
+///////////////////////////////////////////////////////////////////////////
+
+ColorSpaceRcPtr ColorSpace::Create()
+{
+    return ColorSpaceRcPtr(new ColorSpace(REFERENCE_SPACE_SCENE), &deleter);
+}
+
+void ColorSpace::deleter(ColorSpace* c)
+{
+    delete c;
+}
+
+ColorSpaceRcPtr ColorSpace::Create(ReferenceSpaceType referenceSpace)
+{
+    auto cs = ColorSpaceRcPtr(new ColorSpace(referenceSpace), &deleter);
+    return cs;
+}
+
+ColorSpace::ColorSpace(ReferenceSpaceType referenceSpace)
+: m_impl(new ColorSpace::Impl(referenceSpace))
+{
+}
+
+ColorSpace::~ColorSpace()
+{
+    delete m_impl;
+    m_impl = nullptr;
+}
+
+ColorSpaceRcPtr ColorSpace::createEditableCopy() const
+{
+    ColorSpaceRcPtr cs = ColorSpace::Create();
+    *cs->m_impl = *m_impl;
+    return cs;
+}
+
+const char * ColorSpace::getName() const noexcept
+{
+    return getImpl()->m_name.c_str();
+}
+
+void ColorSpace::setName(const char * name) noexcept
+{
+    getImpl()->m_name = name ? name : "";
+    // Name can no longer be an alias.
+    StringUtils::Remove(getImpl()->m_aliases, getImpl()->m_name);
+}
+
+size_t ColorSpace::getNumAliases() const noexcept
+{
+    return getImpl()->m_aliases.size();
+}
+
+const char * ColorSpace::getAlias(size_t idx) const noexcept
+{
+    if (idx < getImpl()->m_aliases.size())
+    {
+        return getImpl()->m_aliases[idx].c_str();
+    }
+    return "";
+}
+
+void ColorSpace::addAlias(const char * alias) noexcept
+{
+    if (alias && *alias)
+    {
+        if (!StringUtils::Compare(alias, getImpl()->m_name))
+        {
+            if (!StringUtils::Contain(getImpl()->m_aliases, alias))
             {
-                name_ = rhs.name_;
-                family_ = rhs.family_;
-                equalityGroup_ = rhs.equalityGroup_;
-                description_ = rhs.description_;
-                bitDepth_ = rhs.bitDepth_;
-                isData_ = rhs.isData_;
-                allocation_ = rhs.allocation_;
-                allocationVars_ = rhs.allocationVars_;
-
-                toRefTransform_ = rhs.toRefTransform_?
-                    rhs.toRefTransform_->createEditableCopy()
-                    : rhs.toRefTransform_;
-
-                fromRefTransform_ = rhs.fromRefTransform_?
-                    rhs.fromRefTransform_->createEditableCopy()
-                    : rhs.fromRefTransform_;
-
-                toRefSpecified_ = rhs.toRefSpecified_;
-                fromRefSpecified_ = rhs.fromRefSpecified_;
-
-                categories_ = rhs.categories_;
+                getImpl()->m_aliases.push_back(alias);
             }
-            return *this;
-        }
-
-        Categories::const_iterator findCategory(const char * category) const
-        {
-            if(!category || !*category) return categories_.end();
-
-            // NB: Categories are not case-sensitive and whitespace is stripped.
-            const std::string ref(pystring::strip(pystring::lower(category)));
-
-            for(auto itr = categories_.begin(); itr!=categories_.end(); ++itr)
-            {
-                if(pystring::strip(pystring::lower(*itr))==ref)
-                {
-                    return itr;
-                }
-            }
-
-            return categories_.end();
-        }
-
-        void removeCategory(const char * category)
-        {
-            if(!category || !*category) return;
-
-            // NB: Categories are not case-sensitive and whitespace is stripped.
-            const std::string ref(pystring::strip(pystring::lower(category)));
-
-            for(auto itr = categories_.begin(); itr!=categories_.end(); ++itr)
-            {
-                if(pystring::strip(pystring::lower(*itr))==ref)
-                {
-                    categories_.erase(itr);
-                    return;
-                }
-            }
-
-            return;
-        }
-    };
-    
-    
-    ///////////////////////////////////////////////////////////////////////////
-    
-    
-    
-    ColorSpace::ColorSpace()
-    : m_impl(new ColorSpace::Impl)
-    {
-    }
-    
-    ColorSpace::~ColorSpace()
-    {
-        delete m_impl;
-        m_impl = NULL;
-    }
-    
-    ColorSpaceRcPtr ColorSpace::createEditableCopy() const
-    {
-        ColorSpaceRcPtr cs = ColorSpace::Create();
-        *cs->m_impl = *m_impl;
-        return cs;
-    }
-    
-    const char * ColorSpace::getName() const
-    {
-        return getImpl()->name_.c_str();
-    }
-    
-    void ColorSpace::setName(const char * name)
-    {
-        getImpl()->name_ = name;
-    }
-    const char * ColorSpace::getFamily() const
-    {
-        return getImpl()->family_.c_str();
-    }
-    
-    void ColorSpace::setFamily(const char * family)
-    {
-        getImpl()->family_ = family;
-    }
-    
-    const char * ColorSpace::getEqualityGroup() const
-    {
-        return getImpl()->equalityGroup_.c_str();
-    }
-    
-    void ColorSpace::setEqualityGroup(const char * equalityGroup)
-    {
-        getImpl()->equalityGroup_ = equalityGroup;
-    }
-    
-    const char * ColorSpace::getDescription() const
-    {
-        return getImpl()->description_.c_str();
-    }
-    
-    void ColorSpace::setDescription(const char * description)
-    {
-        getImpl()->description_ = description;
-    }
-    
-    BitDepth ColorSpace::getBitDepth() const
-    {
-        return getImpl()->bitDepth_;
-    }
-    
-    void ColorSpace::setBitDepth(BitDepth bitDepth)
-    {
-        getImpl()->bitDepth_ = bitDepth;
-    }
-
-    bool ColorSpace::hasCategory(const char * category) const
-    {
-        return getImpl()->findCategory(category)
-            != getImpl()->categories_.end();
-    }
-
-    void ColorSpace::addCategory(const char * category)
-    {
-        if(getImpl()->findCategory(category) 
-            == getImpl()->categories_.end())
-        {
-            getImpl()->categories_.push_back(pystring::strip(category));
         }
     }
+}
 
-    void ColorSpace::removeCategory(const char * category)
+void ColorSpace::removeAlias(const char * name) noexcept
+{
+    if (name && *name)
     {
-        getImpl()->removeCategory(category);
+        const std::string alias{ name };
+        StringUtils::Remove(getImpl()->m_aliases, alias);
     }
+}
 
-    int ColorSpace::getNumCategories() const
-    {
-        return static_cast<int>(getImpl()->categories_.size());
-    }
+void ColorSpace::clearAliases() noexcept
+{
+    getImpl()->m_aliases.clear();
+}
 
-    const char * ColorSpace::getCategory(int index) const
-    {
-        if(index<0 || index>=(int)getImpl()->categories_.size()) return nullptr;
+const char * ColorSpace::getFamily() const noexcept
+{
+    return getImpl()->m_family.c_str();
+}
 
-        return getImpl()->categories_[index].c_str();
-    }
+void ColorSpace::setFamily(const char * family)
+{
+    getImpl()->m_family = family;
+}
 
-    void ColorSpace::clearCategories()
-    {
-        getImpl()->categories_.clear();
-    }
+const char * ColorSpace::getEqualityGroup() const noexcept
+{
+    return getImpl()->m_equalityGroup.c_str();
+}
 
-    bool ColorSpace::isData() const
+void ColorSpace::setEqualityGroup(const char * equalityGroup)
+{
+    getImpl()->m_equalityGroup = equalityGroup;
+}
+
+const char * ColorSpace::getDescription() const noexcept
+{
+    return getImpl()->m_description.c_str();
+}
+
+void ColorSpace::setDescription(const char * description)
+{
+    getImpl()->m_description = description;
+}
+
+BitDepth ColorSpace::getBitDepth() const noexcept
+{
+    return getImpl()->m_bitDepth;
+}
+
+void ColorSpace::setBitDepth(BitDepth bitDepth)
+{
+    getImpl()->m_bitDepth = bitDepth;
+}
+
+bool ColorSpace::hasCategory(const char * category) const
+{
+    return getImpl()->m_categories.hasToken(category);
+}
+
+void ColorSpace::addCategory(const char * category)
+{
+    getImpl()->m_categories.addToken(category);
+}
+
+void ColorSpace::removeCategory(const char * category)
+{
+    getImpl()->m_categories.removeToken(category);
+}
+
+int ColorSpace::getNumCategories() const
+{
+    return getImpl()->m_categories.getNumTokens();
+}
+
+const char * ColorSpace::getCategory(int index) const
+{
+    return getImpl()->m_categories.getToken(index);
+}
+
+void ColorSpace::clearCategories()
+{
+    getImpl()->m_categories.clearTokens();
+}
+
+const char * ColorSpace::getEncoding() const noexcept
+{
+    return getImpl()->m_encoding.c_str();
+}
+
+void ColorSpace::setEncoding(const char * encoding)
+{
+    getImpl()->m_encoding = encoding;
+}
+
+bool ColorSpace::isData() const noexcept
+{
+    return getImpl()->m_isData;
+}
+
+void ColorSpace::setIsData(bool val) noexcept
+{
+    getImpl()->m_isData = val;
+}
+
+ReferenceSpaceType ColorSpace::getReferenceSpaceType() const noexcept
+{
+    return getImpl()->m_referenceSpaceType;
+}
+
+Allocation ColorSpace::getAllocation() const noexcept
+{
+    return getImpl()->m_allocation;
+}
+
+void ColorSpace::setAllocation(Allocation allocation) noexcept
+{
+    getImpl()->m_allocation = allocation;
+}
+
+int ColorSpace::getAllocationNumVars() const
+{
+    return static_cast<int>(getImpl()->m_allocationVars.size());
+}
+
+void ColorSpace::getAllocationVars(float * vars) const
+{
+    if(!getImpl()->m_allocationVars.empty())
     {
-        return getImpl()->isData_;
+        memcpy(vars,
+            &getImpl()->m_allocationVars[0],
+            getImpl()->m_allocationVars.size()*sizeof(float));
     }
-    
-    void ColorSpace::setIsData(bool val)
+}
+
+void ColorSpace::setAllocationVars(int numvars, const float * vars)
+{
+    getImpl()->m_allocationVars.resize(numvars);
+
+    if(!getImpl()->m_allocationVars.empty())
     {
-        getImpl()->isData_ = val;
+        memcpy(&getImpl()->m_allocationVars[0],
+            vars,
+            numvars*sizeof(float));
     }
-    
-    Allocation ColorSpace::getAllocation() const
+}
+
+ConstTransformRcPtr ColorSpace::getTransform(ColorSpaceDirection dir) const noexcept
+{
+    switch (dir)
     {
-        return getImpl()->allocation_;
+    case COLORSPACE_DIR_TO_REFERENCE:
+        return getImpl()->m_toRefTransform;
+    case COLORSPACE_DIR_FROM_REFERENCE:
+        return getImpl()->m_fromRefTransform;
     }
-    
-    void ColorSpace::setAllocation(Allocation allocation)
+    return ConstTransformRcPtr();
+}
+
+void ColorSpace::setTransform(const ConstTransformRcPtr & transform,
+                                ColorSpaceDirection dir)
+{
+    TransformRcPtr transformCopy;
+    if(transform) transformCopy = transform->createEditableCopy();
+
+    switch (dir)
     {
-        getImpl()->allocation_ = allocation;
+    case COLORSPACE_DIR_TO_REFERENCE:
+        getImpl()->m_toRefTransform = transformCopy;
+        break;
+    case COLORSPACE_DIR_FROM_REFERENCE:
+        getImpl()->m_fromRefTransform = transformCopy;
+        break;
     }
-    
-    int ColorSpace::getAllocationNumVars() const
+}
+
+std::ostream & operator<< (std::ostream & os, const ColorSpace & cs)
+{
+    const int numVars(cs.getAllocationNumVars());
+    std::vector<float> vars(numVars);
+    if (numVars > 0)
     {
-        return static_cast<int>(getImpl()->allocationVars_.size());
-    }
-    
-    void ColorSpace::getAllocationVars(float * vars) const
-    {
-        if(!getImpl()->allocationVars_.empty())
-        {
-            memcpy(vars,
-                &getImpl()->allocationVars_[0],
-                getImpl()->allocationVars_.size()*sizeof(float));
-        }
-    }
-    
-    void ColorSpace::setAllocationVars(int numvars, const float * vars)
-    {
-        getImpl()->allocationVars_.resize(numvars);
-        
-        if(!getImpl()->allocationVars_.empty())
-        {
-            memcpy(&getImpl()->allocationVars_[0],
-                vars,
-                numvars*sizeof(float));
-        }
-    }
-    
-    ConstTransformRcPtr ColorSpace::getTransform(ColorSpaceDirection dir) const
-    {
-        if(dir == COLORSPACE_DIR_TO_REFERENCE)
-            return getImpl()->toRefTransform_;
-        else if(dir == COLORSPACE_DIR_FROM_REFERENCE)
-            return getImpl()->fromRefTransform_;
-        
-        throw Exception("Unspecified ColorSpaceDirection");
-    }
-    
-    void ColorSpace::setTransform(const ConstTransformRcPtr & transform,
-                                  ColorSpaceDirection dir)
-    {
-        TransformRcPtr transformCopy;
-        if(transform) transformCopy = transform->createEditableCopy();
-        
-        if(dir == COLORSPACE_DIR_TO_REFERENCE)
-            getImpl()->toRefTransform_ = transformCopy;
-        else if(dir == COLORSPACE_DIR_FROM_REFERENCE)
-            getImpl()->fromRefTransform_ = transformCopy;
-        else
-            throw Exception("Unspecified ColorSpaceDirection");
-    }
-    
-    std::ostream& operator<< (std::ostream& os, const ColorSpace& cs)
-    {
-        int numVars(cs.getAllocationNumVars());
-        std::vector<float> vars(numVars);
         cs.getAllocationVars(&vars[0]);
-
-        os << "<ColorSpace ";
-        os << "name=" << cs.getName() << ", ";
-        os << "family=" << cs.getFamily() << ", ";
-        os << "equalityGroup=" << cs.getEqualityGroup() << ", ";
-        os << "bitDepth=" << BitDepthToString(cs.getBitDepth()) << ", ";
-        os << "isData=" << BoolToString(cs.isData());
-        if (numVars)
-        {
-            os << ", allocation=" << AllocationToString(cs.getAllocation()) << ", ";
-            os << "vars=" << vars[0];
-            for (int i = 1; i < numVars; ++i)
-            {
-                os << " " << vars[i];
-            }
-        }
-        os << ">";
-        
-        if(cs.getTransform(COLORSPACE_DIR_TO_REFERENCE))
-        {
-            os << "\n    " << cs.getName() << " --> Reference";
-            os << "\n\t" << *cs.getTransform(COLORSPACE_DIR_TO_REFERENCE);
-        }
-        
-        if(cs.getTransform(COLORSPACE_DIR_FROM_REFERENCE))
-        {
-            os << "\n    Reference --> " << cs.getName();
-            os << "\n\t" << *cs.getTransform(COLORSPACE_DIR_FROM_REFERENCE);
-        }
-        return os;
     }
+
+    os << "<ColorSpace referenceSpaceType=";
+
+    const auto refType = cs.getReferenceSpaceType();
+    switch (refType)
+    {
+    case REFERENCE_SPACE_SCENE:
+        os << "scene, ";
+        break;
+    case REFERENCE_SPACE_DISPLAY:
+        os << "display, ";
+        break;
+    }
+    os << "name=" << cs.getName() << ", ";
+    std::string str{ cs.getFamily() };
+    const auto numAliases = cs.getNumAliases();
+    if (numAliases == 1)
+    {
+        os << "alias= " << cs.getAlias(0) << ", ";
+    }
+    else if (numAliases > 1)
+    {
+        os << "aliases=[" << cs.getAlias(0);
+        for (size_t aidx = 1; aidx < numAliases; ++aidx)
+        {
+            os << ", " << cs.getAlias(aidx);
+        }
+        os << "], ";
+    }
+    if (!str.empty())
+    {
+        os << "family=" << str << ", ";
+    }
+    str = cs.getEqualityGroup();
+    if (!str.empty())
+    {
+        os << "equalityGroup=" << str << ", ";
+    }
+    const auto bd = cs.getBitDepth();
+    if (bd != BIT_DEPTH_UNKNOWN)
+    {
+        os << "bitDepth=" << BitDepthToString(bd) << ", ";
+    }
+    os << "isData=" << BoolToString(cs.isData());
+    if (numVars > 0)
+    {
+        os << ", allocation=" << AllocationToString(cs.getAllocation()) << ", ";
+        os << "vars=" << vars[0];
+        for (int i = 1; i < numVars; ++i)
+        {
+            os << " " << vars[i];
+        }
+    }
+    if (cs.getNumCategories())
+    {
+        StringUtils::StringVec categories;
+        for (int i = 0; i < cs.getNumCategories(); ++i)
+        {
+            categories.push_back(cs.getCategory(i));
+        }
+        os << ", categories=" << StringUtils::Join(categories, ',');
+    }
+    str = cs.getEncoding();
+    if (!str.empty())
+    {
+        os << ", encoding=" << str;
+    }
+    str = cs.getDescription();
+    if (!str.empty())
+    {
+        os << ", description=" << str;
+    }
+    if(cs.getTransform(COLORSPACE_DIR_TO_REFERENCE))
+    {
+        os << ",\n    " << cs.getName() << " --> Reference";
+        os << "\n        " << *cs.getTransform(COLORSPACE_DIR_TO_REFERENCE);
+    }
+    if(cs.getTransform(COLORSPACE_DIR_FROM_REFERENCE))
+    {
+        os << ",\n    Reference --> " << cs.getName();
+        os << "\n        " << *cs.getTransform(COLORSPACE_DIR_FROM_REFERENCE);
+    }
+    os << ">";
+    return os;
 }
-OCIO_NAMESPACE_EXIT
+} // namespace OCIO_NAMESPACE
 
-
-
-///////////////////////////////////////////////////////////////////////////////
-
-#ifdef OCIO_UNIT_TEST
-
-namespace OCIO = OCIO_NAMESPACE;
-#include "unittest.h"
-
-OIIO_ADD_TEST(ColorSpace, category)
-{
-    OCIO::ColorSpaceRcPtr cs = OCIO::ColorSpace::Create();
-    OIIO_CHECK_EQUAL(cs->getNumCategories(), 0);
-
-    OIIO_CHECK_ASSERT(!cs->hasCategory("linear"));
-    OIIO_CHECK_ASSERT(!cs->hasCategory("rendering"));
-    OIIO_CHECK_ASSERT(!cs->hasCategory("log"));
-
-    OIIO_CHECK_NO_THROW(cs->addCategory("linear"));
-    OIIO_CHECK_NO_THROW(cs->addCategory("rendering"));
-    OIIO_CHECK_EQUAL(cs->getNumCategories(), 2);
-
-    OIIO_CHECK_ASSERT(cs->hasCategory("linear"));
-    OIIO_CHECK_ASSERT(cs->hasCategory("rendering"));
-    OIIO_CHECK_ASSERT(!cs->hasCategory("log"));
-
-    OIIO_CHECK_EQUAL(std::string(cs->getCategory(0)), std::string("linear"));
-    OIIO_CHECK_EQUAL(std::string(cs->getCategory(1)), std::string("rendering"));
-    // Check with an invalid index.
-    OIIO_CHECK_NO_THROW(cs->getCategory(2));
-    OIIO_CHECK_ASSERT(cs->getCategory(2) == nullptr);
-
-    OIIO_CHECK_NO_THROW(cs->removeCategory("linear"));
-    OIIO_CHECK_EQUAL(cs->getNumCategories(), 1);
-    OIIO_CHECK_ASSERT(!cs->hasCategory("linear"));
-    OIIO_CHECK_ASSERT(cs->hasCategory("rendering"));
-    OIIO_CHECK_ASSERT(!cs->hasCategory("log"));
-
-    // Remove a category not in the color space.
-    OIIO_CHECK_NO_THROW(cs->removeCategory("log"));
-    OIIO_CHECK_EQUAL(cs->getNumCategories(), 1);
-    OIIO_CHECK_ASSERT(cs->hasCategory("rendering"));
-
-    OIIO_CHECK_NO_THROW(cs->clearCategories());
-    OIIO_CHECK_EQUAL(cs->getNumCategories(), 0);
-}
-
-#endif // OCIO_UNIT_TEST

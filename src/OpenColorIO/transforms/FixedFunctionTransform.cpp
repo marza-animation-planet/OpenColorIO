@@ -1,266 +1,128 @@
-/*
-Copyright (c) 2018 Autodesk Inc., et al.
-All Rights Reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
-
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
 #include <cstring>
 
 #include <OpenColorIO/OpenColorIO.h>
 
 #include "OpBuilders.h"
-#include "ops/FixedFunction/FixedFunctionOpData.h"
-#include "ops/FixedFunction/FixedFunctionOps.h"
+#include "transforms/FixedFunctionTransform.h"
 
-
-OCIO_NAMESPACE_ENTER
+namespace OCIO_NAMESPACE
 {
 
-namespace
+FixedFunctionTransformRcPtr FixedFunctionTransform::Create(FixedFunctionStyle style)
 {
-
-FixedFunctionOpData::Style ConvertStyle(FixedFunctionStyle style, TransformDirection dir)
-{
-    if(dir==TRANSFORM_DIR_UNKNOWN)
-    {
-        throw Exception(
-            "Cannot create FixedFunctionOp with unspecified transform direction.");
-    }
-
-    const bool isForward = dir==TRANSFORM_DIR_FORWARD;
-
-    switch(style)
-    {
-        case FIXED_FUNCTION_ACES_RED_MOD_03:
-        {
-            if(isForward) return FixedFunctionOpData::ACES_RED_MOD_03_FWD;
-            else          return FixedFunctionOpData::ACES_RED_MOD_03_INV;
-            break;
-        }
-        case FIXED_FUNCTION_ACES_RED_MOD_10:
-        {
-            if(isForward) return FixedFunctionOpData::ACES_RED_MOD_10_FWD;
-            else          return FixedFunctionOpData::ACES_RED_MOD_10_INV;
-            break;
-        }
-        case FIXED_FUNCTION_ACES_GLOW_03:
-        {
-            if(isForward) return FixedFunctionOpData::ACES_GLOW_03_FWD;
-            else          return FixedFunctionOpData::ACES_GLOW_03_INV;
-            break;
-        }
-        case FIXED_FUNCTION_ACES_GLOW_10:
-        {
-            if(isForward) return FixedFunctionOpData::ACES_GLOW_10_FWD;
-            else          return FixedFunctionOpData::ACES_GLOW_10_INV;
-            break;
-        }
-        case FIXED_FUNCTION_ACES_DARK_TO_DIM_10:
-        {
-            if(isForward) return FixedFunctionOpData::ACES_DARK_TO_DIM_10_FWD;
-            else          return FixedFunctionOpData::ACES_DARK_TO_DIM_10_INV;
-            break;
-        }
-        case FIXED_FUNCTION_REC2100_SURROUND:
-        {
-            return FixedFunctionOpData::REC2100_SURROUND;
-            break;
-        }
-    }
-
-    std::stringstream ss("Unknown FixedFunction transform style: ");
-    ss << style;
-
-    throw Exception(ss.str().c_str());
-
-    return FixedFunctionOpData::ACES_RED_MOD_03_FWD;
+    return FixedFunctionTransformRcPtr(new FixedFunctionTransformImpl(style),
+                                       &FixedFunctionTransformImpl::deleter);
 }
 
-FixedFunctionStyle ConvertStyle(FixedFunctionOpData::Style style)
+FixedFunctionTransformRcPtr FixedFunctionTransform::Create(FixedFunctionStyle style,
+                                                           const double * params,
+                                                           size_t num)
 {
-    switch(style)
-    {
-        case FixedFunctionOpData::ACES_RED_MOD_03_FWD:
-        case FixedFunctionOpData::ACES_RED_MOD_03_INV:
-            return FIXED_FUNCTION_ACES_RED_MOD_03;
+    FixedFunctionOpData::Params p(num);
+    std::copy(params, params + num, p.begin());
 
-        case FixedFunctionOpData::ACES_RED_MOD_10_FWD:
-        case FixedFunctionOpData::ACES_RED_MOD_10_INV:
-            return FIXED_FUNCTION_ACES_RED_MOD_10;
-
-        case FixedFunctionOpData::ACES_GLOW_03_FWD:
-        case FixedFunctionOpData::ACES_GLOW_03_INV:
-            return FIXED_FUNCTION_ACES_GLOW_03;
-
-        case FixedFunctionOpData::ACES_GLOW_10_FWD:
-        case FixedFunctionOpData::ACES_GLOW_10_INV:
-            return FIXED_FUNCTION_ACES_GLOW_10;
-
-        case FixedFunctionOpData::ACES_DARK_TO_DIM_10_FWD:
-        case FixedFunctionOpData::ACES_DARK_TO_DIM_10_INV:
-            return FIXED_FUNCTION_ACES_DARK_TO_DIM_10;
-
-        case FixedFunctionOpData::REC2100_SURROUND:
-            return FIXED_FUNCTION_REC2100_SURROUND;
-    }
-
-    std::stringstream ss("Unknown FixedFunction style: ");
-    ss << style;
-
-    throw Exception(ss.str().c_str());
-
-    return FIXED_FUNCTION_ACES_RED_MOD_03;
+    return FixedFunctionTransformRcPtr(new FixedFunctionTransformImpl(style, p),
+                                       &FixedFunctionTransformImpl::deleter);
 }
 
-}; // anon
-
-
-FixedFunctionTransformRcPtr FixedFunctionTransform::Create()
-{
-    return FixedFunctionTransformRcPtr(new FixedFunctionTransform(), &deleter);
-}
-
-void FixedFunctionTransform::deleter(FixedFunctionTransform* t)
-{
-    delete t;
-}
-
-class FixedFunctionTransform::Impl : public FixedFunctionOpData
-{
-public:
-    Impl() 
-        :   FixedFunctionOpData()
-        ,   m_direction(TRANSFORM_DIR_FORWARD)
-    {
-    }
-
-    ~Impl() {}
-
-    Impl& operator=(const Impl & rhs)
-    {
-        if(this!=&rhs)
-        {
-            FixedFunctionOpData::operator=(rhs);
-            m_direction  = rhs.m_direction;
-        }
-        return *this;
-    }
-
-    bool equals(const Impl & rhs) const
-    {
-        if(this==&rhs) return true;
-
-        return FixedFunctionOpData::operator==(rhs)
-               && m_direction == rhs.m_direction;
-    }
-
-    TransformDirection m_direction;
-
-private:
-    Impl(const Impl &);
-};
-
-///////////////////////////////////////////////////////////////////////////
-
-
-
-FixedFunctionTransform::FixedFunctionTransform()
-    : m_impl(new FixedFunctionTransform::Impl)
+FixedFunctionTransformImpl::FixedFunctionTransformImpl(FixedFunctionStyle style)
+    : m_data(FixedFunctionOpData::ConvertStyle(style, TRANSFORM_DIR_FORWARD))
 {
 }
 
-TransformRcPtr FixedFunctionTransform::createEditableCopy() const
+FixedFunctionTransformImpl::FixedFunctionTransformImpl(FixedFunctionStyle style,
+                                                       const FixedFunctionOpData::Params & p)
+    : m_data(FixedFunctionOpData::ConvertStyle(style, TRANSFORM_DIR_FORWARD), p)
 {
-    FixedFunctionTransformRcPtr transform = FixedFunctionTransform::Create();
-    *transform->m_impl = *m_impl;
+}
+
+void FixedFunctionTransformImpl::deleter(FixedFunctionTransform * t)
+{
+    delete static_cast<FixedFunctionTransformImpl *>(t);
+}
+
+TransformRcPtr FixedFunctionTransformImpl::createEditableCopy() const
+{
+    TransformRcPtr transform = FixedFunctionTransform::Create(getStyle());
+    dynamic_cast<FixedFunctionTransformImpl*>(transform.get())->data() = data();
     return transform;
 }
 
-FixedFunctionTransform::~FixedFunctionTransform()
+TransformDirection FixedFunctionTransformImpl::getDirection() const noexcept
 {
-    delete m_impl;
-    m_impl = nullptr;
+    return data().getDirection();
 }
 
-FixedFunctionTransform & FixedFunctionTransform::operator= (const FixedFunctionTransform & rhs)
+void FixedFunctionTransformImpl::setDirection(TransformDirection dir) noexcept
 {
-    if (this != &rhs)
+    // NB: The direction is set by modifying the OpData style.
+    data().setDirection(dir);
+}
+
+void FixedFunctionTransformImpl::validate() const
+{
+    try
     {
-        *m_impl = *rhs.m_impl;
+        Transform::validate();
+        data().validate();
     }
-    return *this;
+    catch (Exception & ex)
+    {
+        std::string errMsg("FixedFunctionTransform validation failed: ");
+        errMsg += ex.what();
+        throw Exception(errMsg.c_str());
+    }
 }
 
-TransformDirection FixedFunctionTransform::getDirection() const
+FormatMetadata & FixedFunctionTransformImpl::getFormatMetadata() noexcept
 {
-    return getImpl()->m_direction;
+    return data().getFormatMetadata();
 }
 
-void FixedFunctionTransform::setDirection(TransformDirection dir)
+const FormatMetadata & FixedFunctionTransformImpl::getFormatMetadata() const noexcept
 {
-    getImpl()->m_direction = dir;
+    return data().getFormatMetadata();
 }
 
-void FixedFunctionTransform::validate() const
+bool FixedFunctionTransformImpl::equals(const FixedFunctionTransform & other) const noexcept
 {
-    Transform::validate();
-    getImpl()->validate();
+    if (this == &other) return true;
+    return data() == dynamic_cast<const FixedFunctionTransformImpl*>(&other)->data();
 }
 
-FixedFunctionStyle FixedFunctionTransform::getStyle() const
+FixedFunctionStyle FixedFunctionTransformImpl::getStyle() const
 {
-    return ConvertStyle(getImpl()->getStyle());
+    return FixedFunctionOpData::ConvertStyle(data().getStyle());
 }
 
-void FixedFunctionTransform::setStyle(FixedFunctionStyle style)
+void FixedFunctionTransformImpl::setStyle(FixedFunctionStyle style)
 {
-    getImpl()->setStyle(ConvertStyle(style, TRANSFORM_DIR_FORWARD));
+    const auto curDir = getDirection();
+    data().setStyle(FixedFunctionOpData::ConvertStyle(style, curDir));
 }
 
-size_t FixedFunctionTransform::getNumParams() const
+size_t FixedFunctionTransformImpl::getNumParams() const
 {
-    return getImpl()->getParams().size();
+    return data().getParams().size();
 }
 
-void FixedFunctionTransform::setParams(const double * params, size_t num)
+void FixedFunctionTransformImpl::setParams(const double * params, size_t num)
 {
     FixedFunctionOpData::Params p(num);
     std::copy(params, params+num, p.begin());
-    getImpl()->setParams(p);
+    data().setParams(p);
 }
 
-void FixedFunctionTransform::getParams(double * params) const
+void FixedFunctionTransformImpl::getParams(double * params) const
 {
-    const FixedFunctionOpData::Params & p = getImpl()->getParams();
+    FixedFunctionOpData::Params p = data().getParams();
     std::copy(p.cbegin(), p.cend(), params);
 }
 
-
-
-std::ostream& operator<< (std::ostream & os, const FixedFunctionTransform & t)
+std::ostream & operator<< (std::ostream & os, const FixedFunctionTransform & t)
 {
     os << "<FixedFunction ";
     os << "direction=" << TransformDirectionToString(t.getDirection());
@@ -273,7 +135,7 @@ std::ostream& operator<< (std::ostream & os, const FixedFunctionTransform & t)
         t.getParams(&params[0]);
 
         os << ", params=" << params[0];
-        for (int i = 1; i < numParams; ++i)
+        for (size_t i = 1; i < numParams; ++i)
         {
           os << " " << params[i];
         }
@@ -283,77 +145,5 @@ std::ostream& operator<< (std::ostream & os, const FixedFunctionTransform & t)
     return os;
 }
 
+} // namespace OCIO_NAMESPACE
 
-///////////////////////////////////////////////////////////////////////////
-
-void BuildFixedFunctionOps(OpRcPtrVec & ops,
-                           const Config & /*config*/,
-                           const ConstContextRcPtr & /*context*/,
-                           const FixedFunctionTransform & transform,
-                           TransformDirection dir)
-{
-    const TransformDirection combinedDir 
-        = CombineTransformDirections(dir, transform.getDirection());
-
-    const size_t numParams = transform.getNumParams();
-    FixedFunctionOpData::Params params(numParams, 0.);
-    if(numParams>0) transform.getParams(&params[0]);
-
-    CreateFixedFunctionOp(ops, params, ConvertStyle(transform.getStyle(), combinedDir));
-}
-
-
-}
-OCIO_NAMESPACE_EXIT
-
-
-////////////////////////////////////////////////////////////////////////////////
-
-
-#ifdef OCIO_UNIT_TEST
-
-namespace OCIO = OCIO_NAMESPACE;
-#include "unittest.h"
-
-
-OCIO_NAMESPACE_USING
-
-
-OIIO_ADD_TEST(FixedFunctionTransform, basic)
-{
-    OCIO::FixedFunctionTransformRcPtr func = OCIO::FixedFunctionTransform::Create();
-    OIIO_CHECK_EQUAL(func->getDirection(), OCIO::TRANSFORM_DIR_FORWARD);
-    OIIO_CHECK_EQUAL(func->getStyle(), OCIO::FIXED_FUNCTION_ACES_RED_MOD_03);
-    OIIO_CHECK_EQUAL(func->getNumParams(), 0);
-    OIIO_CHECK_NO_THROW(func->validate());
-
-    OIIO_CHECK_NO_THROW(func->setDirection(OCIO::TRANSFORM_DIR_INVERSE));
-    OIIO_CHECK_EQUAL(func->getDirection(), OCIO::TRANSFORM_DIR_INVERSE);
-    OIIO_CHECK_EQUAL(func->getNumParams(), 0);
-    OIIO_CHECK_NO_THROW(func->validate());
-
-    OIIO_CHECK_NO_THROW(func->setStyle(OCIO::FIXED_FUNCTION_ACES_RED_MOD_10));
-    OIIO_CHECK_EQUAL(func->getStyle(), OCIO::FIXED_FUNCTION_ACES_RED_MOD_10);
-    OIIO_CHECK_EQUAL(func->getNumParams(), 0);
-    OIIO_CHECK_NO_THROW(func->validate());
-
-    OIIO_CHECK_NO_THROW(func->setStyle(OCIO::FIXED_FUNCTION_REC2100_SURROUND));
-    OIIO_CHECK_THROW_WHAT(func->validate(), OCIO::Exception, 
-                          "The style 'REC2100_Surround' must only have one parameter but 0 found.");
-
-    OIIO_CHECK_EQUAL(func->getNumParams(), 0);
-    const double values[1] = { 1. };
-    OIIO_CHECK_NO_THROW(func->setParams(&values[0], 1));
-    OIIO_CHECK_EQUAL(func->getNumParams(), 1);
-    double results[1] = { 0. };
-    OIIO_CHECK_NO_THROW(func->getParams(&results[0]));
-    OIIO_CHECK_EQUAL(results[0], values[0]);
-
-    OIIO_CHECK_NO_THROW(func->validate());
-
-    OIIO_CHECK_NO_THROW(func->setStyle(OCIO::FIXED_FUNCTION_ACES_DARK_TO_DIM_10));
-    OIIO_CHECK_THROW_WHAT(func->validate(), OCIO::Exception, 
-                          "The style 'ACES_DarkToDim10 (Forward)' must have zero parameters but 1 found.");
-}
-
-#endif

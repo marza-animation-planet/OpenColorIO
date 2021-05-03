@@ -1,30 +1,5 @@
-/*
-Copyright (c) 2003-2012 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
 
 #ifndef _OPENCOLORIO_AE_CONTEXT_H_
@@ -36,12 +11,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "OpenColorIO_AE.h"
 #include "OpenColorIO_AE_GL.h"
 
+#include "glsl.h"
+
 #include <OpenColorIO/OpenColorIO.h>
 namespace OCIO = OCIO_NAMESPACE;
 
 
 
-// yeah, this probably could/should go in a seperate file
+// yeah, this probably could/should go in a separate file
 class Path
 {
   public:
@@ -82,7 +59,7 @@ class OpenColorIO_AE_Context
     
     void setupConvert(const char *input, const char *output);
     void setupDisplay(const char *input, const char *device, const char *transform);
-    void setupLUT(bool invert, OCIO_Interp interpolation);
+    void setupLUT(OCIO_Invert invert, OCIO_Interp interpolation);
   
     typedef std::vector<std::string> SpaceVec;
 
@@ -97,10 +74,16 @@ class OpenColorIO_AE_Context
     
     OCIO::ConstConfigRcPtr config() const { return _config; }
     OCIO::ConstProcessorRcPtr processor() const { return _processor; }
+    OCIO::ConstCPUProcessorRcPtr cpu_processor() const { return _cpu_processor; }
+    OCIO::ConstGPUProcessorRcPtr gpu_processor() const { return _gpu_processor; }
     
     bool ExportLUT(const std::string &path, const std::string &display_icc_path);
     
     bool ProcessWorldGL(PF_EffectWorld *float_world);
+
+    static void getenv(const char *name, std::string &value);
+
+    static void getenvOCIO(std::string &value) { getenv("OCIO", value); }
 
   private:
     std::string _path;
@@ -118,18 +101,19 @@ class OpenColorIO_AE_Context
     SpaceVec _devices;
     SpaceVec _transforms;
     
-    bool _invert;
+    OCIO_Invert _invert;
     OCIO_Interp _interpolation;
     
     
     OCIO::ConstConfigRcPtr      _config;
     OCIO::ConstProcessorRcPtr   _processor;
+    OCIO::ConstCPUProcessorRcPtr   _cpu_processor;
+    OCIO::ConstGPUProcessorRcPtr   _gpu_processor;
     
     
     bool _gl_init;
     
-    GLuint _fragShader;
-    GLuint _program;
+    OCIO::OpenGLBuilderRcPtr _oglBuilder;
 
     GLuint _imageTexID;
 

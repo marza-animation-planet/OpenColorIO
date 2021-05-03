@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright Contributors to the OpenColorIO Project.
+
 # Control the end-of-line (i.e. eol) type for all the test files.
 
 # Most formats are text formats. Binary formats are excluded below.
@@ -13,3 +16,6 @@ tests/data/files/image_png.clf binary
 # Exclude binary formats.
 tests/data/files/*.icc binary
 tests/data/files/*.icm binary
+
+# Avoid Windows line breaks in shell scripts (bound to fail)
+*.sh text eol=lf

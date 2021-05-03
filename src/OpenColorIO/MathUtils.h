@@ -1,131 +1,60 @@
-/*
-Copyright (c) 2003-2010 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
-
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
 #ifndef INCLUDED_OCIO_MATHUTILS_H
 #define INCLUDED_OCIO_MATHUTILS_H
 
-#include <cmath>
-#include <vector>
 #include <algorithm>
+#include <cmath>
 
 #include <OpenColorIO/OpenColorIO.h>
 
-#include "ilmbase/half.h"
-#include "Op.h"
-#include "Platform.h"
+#include "OpenEXR/half.h"
 
-OCIO_NAMESPACE_ENTER
+namespace OCIO_NAMESPACE
 {
-    // From Imath
-    //--------------------------------------------------------------------------
-    // Compare two numbers and test if they are "approximately equal":
-    //
-    // EqualWithAbsError (x1, x2, e)
-    //
-    //  Returns true if x1 is the same as x2 with an absolute error of
-    //  no more than e,
-    //  
-    //  abs (x1 - x2) <= e
-    //
-    // EqualWithRelError (x1, x2, e)
-    //
-    //  Returns true if x1 is the same as x2 with an relative error of
-    //  no more than e,
-    //  
-    //  abs (x1 - x2) <= e * x1
-    //
-    //--------------------------------------------------------------------------
-    
-    template<typename T>
-    inline bool EqualWithAbsError (T x1, T x2, T e)
-    {
-        return ((x1 > x2)? x1 - x2: x2 - x1) <= e;
-    }
-    
-    template<typename T>
-    inline bool EqualWithRelError (T x1, T x2, T e)
-    {
-        return ((x1 > x2)? x1 - x2: x2 - x1) <= e * ((x1 > 0)? x1: -x1);
-    }
 
-#ifdef OCIO_UNIT_TEST
-    // Relative comparison: check if the difference between value and expected
-    // relative to (divided by) expected does not exceed the eps.  A minimum
-    // expected value is used to limit the scaling of the difference and
-    // avoid large relative differences for small numbers.
-    template<typename T>
-    inline bool EqualWithSafeRelError(T value,
-                                      T expected,
-                                      T eps,
-                                      T minExpected)
-    {
-        // If value and expected are infinity, return true.
-        if (value == expected) return true;
-        if (std::isnan(value) && std::isnan(expected)) return true;
-        const float div = (expected > 0) ?
-            ((expected < minExpected) ? minExpected : expected) :
-            ((-expected < minExpected) ? minExpected : -expected);
+template<typename T>
+bool IsNan(T val) { return std::isnan(val); }
 
-        return (
-            ((value > expected) ? value - expected : expected - value)
-            / div) <= eps;
-    }
-#endif
 
-    inline float lerpf(float a, float b, float z)
-    {
-        return (b - a) * z + a;
-    }
-    
-#ifdef WINDOWS
-    inline int isnan (float val)
-    {
-        // Windows uses a non-standard version of 'isnan'
-        return _isnan (val);
-    }
-    inline int isnan(double val)
-    {
-        // Windows uses a non-standard version of 'isnan'
-        return _isnan(val);
-    }
-#else
+// From Imath
+//--------------------------------------------------------------------------
+// Compare two numbers and test if they are "approximately equal":
+//
+// EqualWithAbsError (x1, x2, e)
+//
+//  Returns true if x1 is the same as x2 with an absolute error of
+//  no more than e,
+//  
+//  abs (x1 - x2) <= e
+//
+// EqualWithRelError (x1, x2, e)
+//
+//  Returns true if x1 is the same as x2 with an relative error of
+//  no more than e,
+//  
+//  abs (x1 - x2) <= e * x1
+//
+//--------------------------------------------------------------------------
 
-#ifdef ANDROID
-// support std::isnan - needs to be tested as it might not be part of the NDK
-#define _GLIBCXX_USE_C99_MATH 1
-#endif
+template<typename T>
+inline bool EqualWithAbsError (T x1, T x2, T e)
+{
+    return ((x1 > x2)? x1 - x2: x2 - x1) <= e;
+}
 
-    // This lets all platforms just use isnan, within the OCIO namespace,
-    // across all platforms. (Windows defines the function above).
-    using std::isnan;
-#endif
-    
+template<typename T>
+inline bool EqualWithRelError (T x1, T x2, T e)
+{
+    return ((x1 > x2)? x1 - x2: x2 - x1) <= e * ((x1 > 0)? x1: -x1);
+}
+
+inline float lerpf(float a, float b, float z)
+{
+    return (b - a) * z + a;
+}
+
 // Clamp value a to[min, max]
 // First compare with max, then with min.
 // 
@@ -138,7 +67,7 @@ inline T Clamp(T a, T min, T max)
 }
 
 // Remove/map special float values to values inside the floating-point domain.
-//        Especifically, maps:
+//        Specifically, maps:
 //          -Inf to -MAX_FLOAT
 //           Inf to  MAX_FLOAT
 //           NaN to  0
@@ -147,15 +76,16 @@ inline T Clamp(T a, T min, T max)
 float SanitizeFloat(float f);
 
 // Checks within fltmin tolerance
-bool IsScalarEqualToZero(float v);
-bool IsScalarEqualToOne(float v);
-bool IsScalarEqualToZeroFlt(double v);
-bool IsScalarEqualToOneFlt(double v);
+template<typename T>
+bool IsScalarEqualToZero(T v);
+template<typename T>
+bool IsScalarEqualToOne(T v);
 
 // Are all the vector components the specified value?
-bool IsVecEqualToZero(const float* v, int size);
-bool IsVecEqualToOne(const float* v, int size);
-bool IsVecEqualToOneFlt(const double* v, int size);
+template<typename T>
+bool IsVecEqualToZero(const T * v, unsigned int size);
+template<typename T>
+bool IsVecEqualToOne(const T * v, unsigned int size);
 
 // Is at least one of the specified components equal to 0?
 bool VecContainsZero(const float* v, int size);
@@ -163,18 +93,9 @@ bool VecContainsOne(const float* v, int size);
 
 // Are two vectors equal? (Same size, same values?)
 template<typename T>
-bool VecsEqualWithRelError(const T * v1, int size1,
-                           const T * v2, int size2,
-                           T e)
-{
-    if (size1 != size2) return false;
-    for (int i = 0; i<size1; ++i)
-    {
-        if (!EqualWithRelError(v1[i], v2[i], e)) return false;
-    }
-
-    return true;
-}
+bool VecsEqualWithRelError(const T * v1, unsigned int size1,
+                           const T * v2, unsigned int size2,
+                           T e);
 
 inline double GetHalfMax()
 {
@@ -211,13 +132,8 @@ float GetSafeScalarInverse(float v, float defaultValue = 1.0);
 bool GetM44Inverse(float* mout, const float* m);
 
 // Is an identity matrix? (with fltmin tolerance)
-bool IsM44Identity(const float* m);
-
-// Is this a purely diagonal matrix?
-bool IsM44Diagonal(const float* m);
-
-// Extract the diagonal
-void GetM44Diagonal(float* vout, const float* m);
+template<typename T>
+bool IsM44Identity(const T * m);
 
 // Combine two transforms in the mx+b form, into a single transform.
 // mout*x+vout == m2*(m1*x+v1)+v2
@@ -303,7 +219,6 @@ bool FloatsDiffer(const float expected, const float actual,
 // Inf is treated like any other value (diff from HALFMAX is 1).
 bool HalfsDiffer(const half expected, const half actual, const int tolerance);
 
-}
-OCIO_NAMESPACE_EXIT
+} // namespace OCIO_NAMESPACE
 
 #endif

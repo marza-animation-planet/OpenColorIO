@@ -1,30 +1,5 @@
-/*
-Copyright (c) 2003-2010 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
 
 #ifndef INCLUDED_OCIO_PROCESSOR_H
@@ -32,60 +7,102 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <OpenColorIO/OpenColorIO.h>
 
+#include "Caching.h"
 #include "Mutex.h"
 #include "Op.h"
 #include "PrivateTypes.h"
 
-OCIO_NAMESPACE_ENTER
+
+namespace OCIO_NAMESPACE
 {
-    class Processor::Impl
-    {
-    private:
-        ProcessorMetadataRcPtr m_metadata;
+class Processor::Impl
+{
+private:
+    ProcessorMetadataRcPtr m_metadata;
 
-        // Vector of ops for the processor.
-        OpRcPtrVec m_ops;
+    // Vector of ops for the processor.
+    OpRcPtrVec m_ops;
 
-        mutable std::string m_cpuCacheID;
-        
-        mutable Mutex m_resultsCacheMutex;
-        
-    public:
-        Impl();
-        ~Impl();
-        
-        bool isNoOp() const;
-        bool hasChannelCrosstalk() const;
-        
-        ConstProcessorMetadataRcPtr getMetadata() const;
-        
-        void apply(ImageDesc& img) const;
-        
-        void applyRGB(float * pixel) const;
-        void applyRGBA(float * pixel) const;
-        const char * getCpuCacheID() const;
-        
-        // Extract all the information to fully implement the processor shader program.
-        void extractGpuShaderInfo(GpuShaderDescRcPtr & shaderDesc) const;
+    mutable std::string m_cacheID;
 
-        ////////////////////////////////////////////
-        //
-        // Builder functions, Not exposed
-        
-        void addColorSpaceConversion(const Config & config,
-                                     const ConstContextRcPtr & context,
-                                     const ConstColorSpaceRcPtr & srcColorSpace,
-                                     const ConstColorSpaceRcPtr & dstColorSpace);
-        
-        void addTransform(const Config & config,
-                          const ConstContextRcPtr & context,
-                          const ConstTransformRcPtr& transform,
-                          TransformDirection direction);
-        
-        void finalize();
-    };
-    
-}
-OCIO_NAMESPACE_EXIT
+    mutable Mutex m_resultsCacheMutex;
+
+    ProcessorCacheFlags m_cacheFlags { PROCESSOR_CACHE_DEFAULT };
+
+    // Speedup GPU & CPU Processor accesses by using a cache.
+    mutable ProcessorCache<std::size_t, ProcessorRcPtr>    m_optProcessorCache;
+    mutable ProcessorCache<std::size_t, GPUProcessorRcPtr> m_gpuProcessorCache;
+    mutable ProcessorCache<std::size_t, CPUProcessorRcPtr> m_cpuProcessorCache;
+
+public:
+    Impl();
+    Impl(Impl &) = delete;
+    Impl & operator=(const Impl & rhs);
+    ~Impl();
+
+    bool isNoOp() const;
+    bool hasChannelCrosstalk() const;
+
+    ConstProcessorMetadataRcPtr getProcessorMetadata() const;
+
+    const FormatMetadata & getFormatMetadata() const;
+
+    int getNumTransforms() const;
+    const FormatMetadata & getTransformFormatMetadata(int index) const;
+
+    bool isDynamic() const noexcept;
+    bool hasDynamicProperty(DynamicPropertyType type) const noexcept;
+    DynamicPropertyRcPtr getDynamicProperty(DynamicPropertyType type) const;
+
+    const char * getCacheID() const;
+
+    GroupTransformRcPtr createGroupTransform() const;
+
+    ConstProcessorRcPtr getOptimizedProcessor(OptimizationFlags oFlags) const;
+
+    ConstProcessorRcPtr getOptimizedProcessor(BitDepth inBD,
+                                              BitDepth outBD,
+                                              OptimizationFlags oFlags) const;
+
+    // Get an optimized GPU processor instance for F32 images with default optimizations.
+    ConstGPUProcessorRcPtr getDefaultGPUProcessor() const;
+
+    // Get an optimized GPU processor instance for F32 images.
+    ConstGPUProcessorRcPtr getOptimizedGPUProcessor(OptimizationFlags oFlags) const;
+
+    // Get an optimized CPU processor instance for F32 images with default optimizations.
+    ConstCPUProcessorRcPtr getDefaultCPUProcessor() const;
+
+    // Get an optimized CPU processor instance for F32 images.
+    ConstCPUProcessorRcPtr getOptimizedCPUProcessor(OptimizationFlags oFlags) const;
+
+    // Get a optimized CPU processor instance for arbitrary input and output bit-depths.
+    ConstCPUProcessorRcPtr getOptimizedCPUProcessor(BitDepth inBitDepth,
+                                                    BitDepth outBitDepth,
+                                                    OptimizationFlags oFlags) const;
+
+    // Enable or disable the internal caches.
+    void setProcessorCacheFlags(ProcessorCacheFlags flags) noexcept;
+
+    ////////////////////////////////////////////
+    //
+    // Builder functions, Not exposed
+
+    void setColorSpaceConversion(const Config & config,
+                                 const ConstContextRcPtr & context,
+                                 const ConstColorSpaceRcPtr & srcColorSpace,
+                                 const ConstColorSpaceRcPtr & dstColorSpace);
+
+    void setTransform(const Config & config,
+                      const ConstContextRcPtr & context,
+                      const ConstTransformRcPtr& transform,
+                      TransformDirection direction);
+
+    void concatenate(ConstProcessorRcPtr & p1, ConstProcessorRcPtr & p2);
+
+    void computeMetadata();
+};
+
+} // namespace OCIO_NAMESPACE
 
 #endif

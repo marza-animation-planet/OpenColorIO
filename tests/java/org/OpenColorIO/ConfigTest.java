@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
 import junit.framework.TestCase;
 import org.OpenColorIO.*;
@@ -107,7 +109,7 @@ public class ConfigTest extends TestCase {
         assertEquals("luts", _cfge.getSearchPath());
         _cfge.setSearchPath("otherdir");
         assertEquals("otherdir", _cfge.getSearchPath());
-        _cfge.sanityCheck();
+        _cfge.validate();
         _cfge.setDescription("testdesc");
         assertEquals("testdesc", _cfge.getDescription());
         //assertEquals(SIMPLE_PROFILE, _cfg.serialize());
@@ -223,7 +225,7 @@ public class ConfigTest extends TestCase {
         _cfg.dispose();
         
         //System.out.println(_cfge.serialize());
-        //_cfge.sanityCheck();
+        //_cfge.validate();
         //System.out.println(_cfge.getNumColorSpaces());
         //System.out.println(_cfg.getCacheID());
         //System.out.println(_cfge.serialize());

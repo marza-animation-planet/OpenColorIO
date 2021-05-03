@@ -1,31 +1,14 @@
-/*
-Copyright (c) 2003-2017 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
 #include "OpenColorIO_PS_Context.h"
+
+#include <assert.h>
+
+#ifndef __APPLE__
+#include <Windows.h>
+#endif
+
 
 int
 FindSpace(const SpaceVec &spaceVec, const std::string &space)
@@ -50,7 +33,7 @@ OpenColorIO_PS_Context::OpenColorIO_PS_Context(const std::string &path) :
     {
         _config = OCIO::Config::CreateFromFile( _path.c_str() );
         
-        _config->sanityCheck();
+        _config->validate();
         
         _isLUT = false;
         
@@ -118,7 +101,7 @@ OpenColorIO_PS_Context::OpenColorIO_PS_Context(const std::string &path) :
     }
 }
 
-OCIO::ConstProcessorRcPtr
+OCIO::ConstCPUProcessorRcPtr
 OpenColorIO_PS_Context::getConvertProcessor(const std::string &inputSpace, const std::string &outputSpace) const
 {
     assert( !isLUT() );
@@ -131,11 +114,13 @@ OpenColorIO_PS_Context::getConvertProcessor(const std::string &inputSpace, const
     
     OCIO::ConstProcessorRcPtr processor = _config->getProcessor(transform);
     
-    return processor;
+    OCIO::ConstCPUProcessorRcPtr cpu_processor = processor->getDefaultCPUProcessor();
+    
+    return cpu_processor;
 }
 
 
-OCIO::ConstProcessorRcPtr
+OCIO::ConstCPUProcessorRcPtr
 OpenColorIO_PS_Context::getDisplayProcessor(const std::string &inputSpace, const std::string &device, const std::string &transform) const
 {
     assert( !isLUT() );
@@ -148,11 +133,13 @@ OpenColorIO_PS_Context::getDisplayProcessor(const std::string &inputSpace, const
 
     OCIO::ConstProcessorRcPtr processor = _config->getProcessor(ocio_transform);
     
-    return processor;
+    OCIO::ConstCPUProcessorRcPtr cpu_processor = processor->getDefaultCPUProcessor();
+    
+    return cpu_processor;
 }
 
 
-OCIO::ConstProcessorRcPtr
+OCIO::ConstCPUProcessorRcPtr
 OpenColorIO_PS_Context::getLUTProcessor(OCIO::Interpolation interpolation, OCIO::TransformDirection direction) const
 {
     assert( isLUT() );
@@ -165,7 +152,9 @@ OpenColorIO_PS_Context::getLUTProcessor(OCIO::Interpolation interpolation, OCIO:
     
     OCIO::ConstProcessorRcPtr processor = _config->getProcessor(transform);
     
-    return processor;
+    OCIO::ConstCPUProcessorRcPtr cpu_processor = processor->getOptimizedCPUProcessor(OCIO::OPTIMIZATION_DEFAULT, OCIO::FINALIZATION_EXACT);
+    
+    return cpu_processor;
 }
 
 
@@ -283,3 +272,19 @@ OpenColorIO_PS_Context::getDefaultTransform(const std::string &device) const
     return _config->getDefaultView( device.c_str() );
 }
 
+
+void
+OpenColorIO_PS_Context::getenv(const char *name, std::string &value)
+{
+#ifdef __APPLE__
+    char *env = std::getenv(name);
+
+    value = (env != NULL ? env : "");
+#else
+    char env[1024] = { '\0' };
+
+    const DWORD result = GetEnvironmentVariable(name, env, 1023);
+
+    value = (result > 0 ? env : "");
+#endif
+}

@@ -1,1067 +1,1059 @@
-/*
-Copyright (c) 2003-2010 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
-
-#include <Python.h>
+#include <fstream>
 #include <sstream>
-#include <OpenColorIO/OpenColorIO.h>
 
-#include "PyUtil.h"
-#include "PyDoc.h"
+#include "PyOpenColorIO.h"
+#include "PyUtils.h"
 
-OCIO_NAMESPACE_ENTER
+namespace OCIO_NAMESPACE
 {
-    
-    PyObject * BuildConstPyConfig(ConstConfigRcPtr config)
-    {
-        return BuildConstPyOCIO<PyOCIO_Config, ConfigRcPtr,
-            ConstConfigRcPtr>(config, PyOCIO_ConfigType);
-    }
-    
-    PyObject * BuildEditablePyConfig(ConfigRcPtr config)
-    {
-        return BuildEditablePyOCIO<PyOCIO_Config, ConfigRcPtr,
-            ConstConfigRcPtr>(config, PyOCIO_ConfigType);
-    }
-    
-    bool IsPyConfig(PyObject * pyobject)
-    {
-        return IsPyOCIOType(pyobject, PyOCIO_ConfigType);
-    }
-    
-    bool IsPyConfigEditable(PyObject * pyobject)
-    {
-        return IsPyEditable<PyOCIO_Config>(pyobject, PyOCIO_ConfigType);
-    }
-    
-    ConstConfigRcPtr GetConstConfig(PyObject * pyobject, bool allowCast)
-    {
-        return GetConstPyOCIO<PyOCIO_Config, ConstConfigRcPtr>(pyobject,
-            PyOCIO_ConfigType, allowCast);
-    }
-    
-    ConfigRcPtr GetEditableConfig(PyObject * pyobject)
-    {
-        return GetEditablePyOCIO<PyOCIO_Config, ConfigRcPtr>(pyobject,
-            PyOCIO_ConfigType);
-    }
-    
-    namespace
-    {
-        
-        ///////////////////////////////////////////////////////////////////////
-        ///
-        
-        PyObject * PyOCIO_Config_CreateFromEnv(PyObject * cls, PyObject * args);
-        PyObject * PyOCIO_Config_CreateFromFile(PyObject * cls, PyObject * args);
-        PyObject * PyOCIO_Config_CreateFromStream(PyObject * cls, PyObject * args);
-        int PyOCIO_Config_init(PyOCIO_Config * self, PyObject * args, PyObject * kwds);
-        void PyOCIO_Config_delete(PyOCIO_Config * self);
-        PyObject * PyOCIO_Config_repr(PyObject * self);
-        PyObject * PyOCIO_Config_isEditable(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_createEditableCopy(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_sanityCheck(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_getDescription(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_setDescription(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_serialize(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_getCacheID(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getCurrentContext(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_addEnvironmentVar(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getNumEnvironmentVars(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_getEnvironmentVarNameByIndex(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getEnvironmentVarDefault(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getEnvironmentVarDefaults(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_clearEnvironmentVars(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_getSearchPath(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_setSearchPath(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getWorkingDir(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_setWorkingDir(PyObject * self,  PyObject * args);
-        PyObject * PyOCIO_Config_getNumColorSpaces(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_getColorSpaceNameByIndex(PyObject * self,  PyObject * args);
-        PyObject * PyOCIO_Config_getColorSpaces(PyObject * self, PyObject *); // py interface only
-        PyObject * PyOCIO_Config_getColorSpace(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getIndexForColorSpace(PyObject * self,  PyObject * args);
-        PyObject * PyOCIO_Config_addColorSpace(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_clearColorSpaces(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_parseColorSpaceFromString(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_isStrictParsingEnabled(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_setStrictParsingEnabled(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_setRole(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getNumRoles(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_hasRole(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getRoleName(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getDefaultDisplay(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_getNumDisplays(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_getDisplay(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getDisplays(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_getDefaultView(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getNumViews(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getView(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getViews(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getDisplayColorSpaceName(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getDisplayLooks(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_addDisplay(PyObject * self, PyObject * args, PyObject * kwargs);
-        PyObject * PyOCIO_Config_clearDisplays(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_setActiveDisplays(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getActiveDisplays(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_setActiveViews(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getActiveViews(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_getDefaultLumaCoefs(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_setDefaultLumaCoefs(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getLook( PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_getNumLooks(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_getLookNameByIndex(PyObject * self, PyObject * args);        
-        PyObject * PyOCIO_Config_getLooks(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_addLook(PyObject * self, PyObject * args);
-        PyObject * PyOCIO_Config_clearLooks(PyObject * self, PyObject *);
-        PyObject * PyOCIO_Config_getProcessor(PyObject * self, PyObject * args, PyObject * kwargs);
-        
-        ///////////////////////////////////////////////////////////////////////
-        ///
-        
-        // disable cast-function-type warning on GCC 8+
-        // this is triggered by methods that take kwargs (METH_KEYWORDS)
-        #if __GNUC__ >= 8
-        #pragma GCC diagnostic push
-        #pragma GCC diagnostic ignored "-Wcast-function-type"
-        #endif
-        
-        PyMethodDef PyOCIO_Config_methods[] = {
-            { "CreateFromEnv",
-            (PyCFunction) PyOCIO_Config_CreateFromEnv, METH_NOARGS | METH_CLASS, CONFIG_CREATEFROMENV__DOC__ },
-            { "CreateFromFile",
-            PyOCIO_Config_CreateFromFile, METH_VARARGS | METH_CLASS, CONFIG_CREATEFROMFILE__DOC__ },
-            { "CreateFromStream",
-            PyOCIO_Config_CreateFromStream, METH_VARARGS | METH_CLASS, CONFIG_CREATEFROMSTREAM__DOC__ },
-            { "isEditable",
-            (PyCFunction) PyOCIO_Config_isEditable, METH_NOARGS, CONFIG_ISEDITABLE__DOC__ },
-            { "createEditableCopy",
-            (PyCFunction) PyOCIO_Config_createEditableCopy, METH_NOARGS, CONFIG_CREATEEDITABLECOPY__DOC__ },
-            { "sanityCheck",
-            (PyCFunction) PyOCIO_Config_sanityCheck, METH_NOARGS, CONFIG_SANITYCHECK__DOC__ },
-            { "getDescription",
-            (PyCFunction) PyOCIO_Config_getDescription, METH_NOARGS, CONFIG_GETDESCRIPTION__DOC__ },
-            { "setDescription",
-            PyOCIO_Config_setDescription, METH_VARARGS, CONFIG_SETDESCRIPTION__DOC__ },
-            { "serialize",
-            (PyCFunction) PyOCIO_Config_serialize, METH_NOARGS, CONFIG_SERIALIZE__DOC__ },
-            { "getCacheID",
-            PyOCIO_Config_getCacheID, METH_VARARGS, CONFIG_GETCACHEID__DOC__ },
-            { "getCurrentContext",
-            (PyCFunction) PyOCIO_Config_getCurrentContext, METH_NOARGS, CONFIG_GETCURRENTCONTEXT__DOC__ },
-            { "addEnvironmentVar",
-            PyOCIO_Config_addEnvironmentVar, METH_VARARGS, CONFIG_ADDENVIRONMENTVAR__DOC__ },
-            { "getNumEnvironmentVars",
-            (PyCFunction)PyOCIO_Config_getNumEnvironmentVars, METH_NOARGS, CONFIG_GETNUMENVIRONMENTVARS__DOC__ },
-            { "getEnvironmentVarNameByIndex",
-            PyOCIO_Config_getEnvironmentVarNameByIndex, METH_VARARGS, CONFIG_GETENVIRONMENTVARNAMEBYINDEX__DOC__ },
-            { "getEnvironmentVarDefault",
-            PyOCIO_Config_getEnvironmentVarDefault, METH_VARARGS, CONFIG_GETENVIRONMENTVARDEFAULT__DOC__ },
-            { "getEnvironmentVarDefaults",
-            (PyCFunction)PyOCIO_Config_getEnvironmentVarDefaults, METH_NOARGS, CONFIG_GETENVIRONMENTVARDEFAULTS__DOC__ },
-            { "clearEnvironmentVars",
-            (PyCFunction)PyOCIO_Config_clearEnvironmentVars, METH_NOARGS, CONFIG_CLEARENVIRONMENTVARS__DOC__ },
-            { "getSearchPath",
-            (PyCFunction) PyOCIO_Config_getSearchPath, METH_NOARGS, CONFIG_GETSEARCHPATH__DOC__ },
-            { "setSearchPath",
-            PyOCIO_Config_setSearchPath, METH_VARARGS, CONFIG_SETSEARCHPATH__DOC__ },
-            { "getWorkingDir",
-            (PyCFunction) PyOCIO_Config_getWorkingDir, METH_NOARGS, CONFIG_GETWORKINGDIR__DOC__ },
-            { "setWorkingDir",
-            PyOCIO_Config_setWorkingDir, METH_VARARGS, CONFIG_SETWORKINGDIR__DOC__ },
-            { "getNumColorSpaces",
-            (PyCFunction) PyOCIO_Config_getNumColorSpaces, METH_VARARGS, CONFIG_GETNUMCOLORSPACES__DOC__ },
-            { "getColorSpaceNameByIndex",
-            PyOCIO_Config_getColorSpaceNameByIndex, METH_VARARGS, CONFIG_GETCOLORSPACENAMEBYINDEX__DOC__ },
-            { "getColorSpaces",
-            (PyCFunction) PyOCIO_Config_getColorSpaces, METH_NOARGS, CONFIG_GETCOLORSPACES__DOC__ },
-            { "getColorSpace",
-            PyOCIO_Config_getColorSpace, METH_VARARGS, CONFIG_GETCOLORSPACE__DOC__ },
-            { "getIndexForColorSpace",
-            PyOCIO_Config_getIndexForColorSpace, METH_VARARGS, CONFIG_GETINDEXFORCOLORSPACE__DOC__ },
-            { "addColorSpace",
-            PyOCIO_Config_addColorSpace, METH_VARARGS, CONFIG_ADDCOLORSPACE__DOC__ },
-            { "clearColorSpaces",
-            (PyCFunction) PyOCIO_Config_clearColorSpaces, METH_NOARGS, CONFIG_CLEARCOLORSPACES__DOC__ },
-            { "parseColorSpaceFromString",
-            PyOCIO_Config_parseColorSpaceFromString, METH_VARARGS, CONFIG_PARSECOLORSPACEFROMSTRING__DOC__ },
-            { "isStrictParsingEnabled",
-            (PyCFunction) PyOCIO_Config_isStrictParsingEnabled, METH_NOARGS, CONFIG_ISSTRICTPARSINGENABLED__DOC__ },
-            { "setStrictParsingEnabled",
-            PyOCIO_Config_setStrictParsingEnabled, METH_VARARGS, CONFIG_SETSTRICTPARSINGENABLED__DOC__ },
-            { "setRole",
-            PyOCIO_Config_setRole, METH_VARARGS, CONFIG_SETROLE__DOC__ },
-            { "getNumRoles",
-            (PyCFunction) PyOCIO_Config_getNumRoles, METH_NOARGS, CONFIG_GETNUMROLES__DOC__ },
-            { "hasRole",
-            PyOCIO_Config_hasRole, METH_VARARGS, CONFIG_HASROLE__DOC__ },
-            { "getRoleName",
-            PyOCIO_Config_getRoleName, METH_VARARGS, CONFIG_GETROLENAME__DOC__ },
-            { "getDefaultDisplay",
-            (PyCFunction) PyOCIO_Config_getDefaultDisplay, METH_NOARGS, CONFIG_GETDEFAULTDISPLAY__DOC__ },
-            { "getNumDisplays",
-            (PyCFunction) PyOCIO_Config_getNumDisplays, METH_NOARGS, CONFIG_GETNUMDISPLAYS__DOC__ },
-            { "getDisplay",
-            PyOCIO_Config_getDisplay, METH_VARARGS, CONFIG_GETDISPLAY__DOC__ },
-            { "getDisplays",
-            (PyCFunction) PyOCIO_Config_getDisplays, METH_NOARGS, CONFIG_GETDISPLAYS__DOC__ },
-            { "getDefaultView",
-            PyOCIO_Config_getDefaultView, METH_VARARGS, CONFIG_GETDEFAULTVIEW__DOC__ },
-            { "getNumViews",
-            PyOCIO_Config_getNumViews, METH_VARARGS, CONFIG_GETNUMVIEWS__DOC__ },
-            { "getView",
-            PyOCIO_Config_getView, METH_VARARGS, CONFIG_GETVIEW__DOC__ },
-            { "getViews",
-            PyOCIO_Config_getViews, METH_VARARGS, CONFIG_GETVIEWS__DOC__ },
-            { "getDisplayColorSpaceName",
-            PyOCIO_Config_getDisplayColorSpaceName, METH_VARARGS, CONFIG_GETDISPLAYCOLORSPACENAME__DOC__ },
-            { "getDisplayLooks",
-            PyOCIO_Config_getDisplayLooks, METH_VARARGS, CONFIG_GETDISPLAYLOOKS__DOC__ },
-            { "addDisplay",
-            (PyCFunction) PyOCIO_Config_addDisplay, METH_VARARGS|METH_KEYWORDS, CONFIG_ADDDISPLAY__DOC__ },
-            { "clearDisplays",
-            (PyCFunction) PyOCIO_Config_clearDisplays, METH_NOARGS, CONFIG_CLEARDISPLAYS__DOC__ },
-            { "setActiveDisplays",
-            PyOCIO_Config_setActiveDisplays, METH_VARARGS, CONFIG_SETACTIVEDISPLAYS__DOC__ },
-            { "getActiveDisplays",
-            (PyCFunction) PyOCIO_Config_getActiveDisplays, METH_NOARGS, CONFIG_GETACTIVEDISPLAYS__DOC__ },
-            { "setActiveViews",
-            PyOCIO_Config_setActiveViews, METH_VARARGS, CONFIG_SETACTIVEVIEWS__DOC__ },
-            { "getActiveViews",
-            (PyCFunction) PyOCIO_Config_getActiveViews, METH_NOARGS, CONFIG_GETACTIVEVIEWS__DOC__ },
-            { "getDefaultLumaCoefs",
-            (PyCFunction) PyOCIO_Config_getDefaultLumaCoefs, METH_NOARGS, CONFIG_GETDEFAULTLUMACOEFS__DOC__ },
-            { "setDefaultLumaCoefs",
-            PyOCIO_Config_setDefaultLumaCoefs, METH_VARARGS, CONFIG_SETDEFAULTLUMACOEFS__DOC__ },
-            { "getLook",
-            PyOCIO_Config_getLook, METH_VARARGS, CONFIG_GETLOOK__DOC__ },
-            { "getNumLooks",
-            (PyCFunction) PyOCIO_Config_getNumLooks, METH_NOARGS, CONFIG_GETNUMLOOKS__DOC__ },
-            { "getLookNameByIndex",
-            PyOCIO_Config_getLookNameByIndex, METH_VARARGS, CONFIG_GETLOOKNAMEBYINDEX__DOC__ },
-            { "getLooks",
-            (PyCFunction) PyOCIO_Config_getLooks, METH_NOARGS, CONFIG_GETLOOKS__DOC__ },
-            { "addLook",
-            PyOCIO_Config_addLook, METH_VARARGS, CONFIG_ADDLOOK__DOC__ },
-            { "clearLook", // THIS SHOULD BE REMOVED IN THE NEXT BINARY INCOMPATIBLE VERSION
-            (PyCFunction) PyOCIO_Config_clearLooks, METH_NOARGS, CONFIG_CLEARLOOKS__DOC__ },
-            { "clearLooks",
-            (PyCFunction) PyOCIO_Config_clearLooks, METH_NOARGS, CONFIG_CLEARLOOKS__DOC__ },
-            { "getProcessor",
-            (PyCFunction) PyOCIO_Config_getProcessor, METH_VARARGS|METH_KEYWORDS, CONFIG_GETPROCESSOR__DOC__ },
-            { NULL, NULL, 0, NULL }
-        };
-        
-        #if __GNUC__ >= 8
-        #pragma GCC diagnostic pop
-        #endif
-        
-    }
-    
-    ///////////////////////////////////////////////////////////////////////////
-    ///
-    
-    PyTypeObject PyOCIO_ConfigType = {
-        PyVarObject_HEAD_INIT(NULL, 0)              //obsize
-        OCIO_PYTHON_NAMESPACE(Config),              //tp_name
-        sizeof(PyOCIO_Config),                      //tp_basicsize
-        0,                                          //tp_itemsize
-        (destructor)PyOCIO_Config_delete,           //tp_dealloc
-        0,                                          //tp_print
-        0,                                          //tp_getattr
-        0,                                          //tp_setattr
-        0,                                          //tp_compare
-        (reprfunc)PyOCIO_Config_repr,               //tp_repr
-        0,                                          //tp_as_number
-        0,                                          //tp_as_sequence
-        0,                                          //tp_as_mapping
-        0,                                          //tp_hash 
-        0,                                          //tp_call
-        0,                                          //tp_str
-        0,                                          //tp_getattro
-        0,                                          //tp_setattro
-        0,                                          //tp_as_buffer
-        Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,   //tp_flags
-        CONFIG__DOC__,                              //tp_doc 
-        0,                                          //tp_traverse 
-        0,                                          //tp_clear 
-        0,                                          //tp_richcompare 
-        0,                                          //tp_weaklistoffset 
-        0,                                          //tp_iter 
-        0,                                          //tp_iternext 
-        PyOCIO_Config_methods,                      //tp_methods 
-        0,                                          //tp_members 
-        0,                                          //tp_getset 
-        0,                                          //tp_base 
-        0,                                          //tp_dict 
-        0,                                          //tp_descr_get 
-        0,                                          //tp_descr_set 
-        0,                                          //tp_dictoffset 
-        (initproc) PyOCIO_Config_init,              //tp_init 
-        0,                                          //tp_alloc 
-        0,                                          //tp_new 
-        0,                                          //tp_free
-        0,                                          //tp_is_gc
-    };
-    
-    namespace
-    {
-        
-        ///////////////////////////////////////////////////////////////////////
-        ///
-        
-        PyObject * PyOCIO_Config_CreateFromEnv(PyObject *, PyObject * /*self*, *args*/)
-        {
-            OCIO_PYTRY_ENTER()
-            return BuildConstPyConfig(Config::CreateFromEnv());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_CreateFromFile(PyObject * /*self*/, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* filename = 0;
-            if (!PyArg_ParseTuple(args,"s:CreateFromFile", &filename)) return NULL;
-            return BuildConstPyConfig(Config::CreateFromFile(filename));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_CreateFromStream(PyObject * /*self*/, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* stream = 0;
-            if (!PyArg_ParseTuple(args,"s:CreateFromStream", &stream)) return NULL;
-            std::istringstream is;
-            is.str(stream);
-            return BuildConstPyConfig(Config::CreateFromStream(is));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        int PyOCIO_Config_init(PyOCIO_Config *self, PyObject * /*args*/, PyObject * /*kwds*/)
-        {
-            OCIO_PYTRY_ENTER()
-            return BuildPyObject<PyOCIO_Config, ConstConfigRcPtr, ConfigRcPtr>(self, Config::Create());
-            OCIO_PYTRY_EXIT(-1)
-        }
-        
-        void PyOCIO_Config_delete(PyOCIO_Config *self)
-        {
-            DeletePyObject<PyOCIO_Config>(self);
-        }
-        
-        PyObject * PyOCIO_Config_repr(PyObject * self)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            std::ostringstream out;
-            out << *config;
-            return PyString_FromString(out.str().c_str());
-            OCIO_PYTRY_EXIT(NULL)
-        }
+namespace
+{
 
-        PyObject * PyOCIO_Config_isEditable(PyObject * self, PyObject *)
-        {
-            return PyBool_FromLong(IsPyConfigEditable(self));
-        }
-        
-        PyObject * PyOCIO_Config_createEditableCopy(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            ConfigRcPtr copy = config->createEditableCopy();
-            return BuildEditablePyConfig(copy);
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_sanityCheck(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            config->sanityCheck();
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getDescription(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getDescription());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_setDescription(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* desc = 0;
-            if (!PyArg_ParseTuple(args, "s:setDescription",
-                &desc)) return NULL;
-            ConfigRcPtr config = GetEditableConfig(self);
-            config->setDescription(desc);
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_serialize(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            std::ostringstream os;
-            config->serialize(os);
-            return PyString_FromString(os.str().c_str());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getCacheID(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            PyObject* pycontext = NULL;
-            if (!PyArg_ParseTuple(args, "|O:getCacheID",
-                &pycontext)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            ConstContextRcPtr context;
-            if(pycontext != NULL) context = GetConstContext(pycontext, true);
-            else context = config->getCurrentContext();
-            return PyString_FromString(config->getCacheID(context));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getCurrentContext(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return BuildConstPyContext(config->getCurrentContext());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_addEnvironmentVar(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* name = 0;
-            char* value = 0;
-            if (!PyArg_ParseTuple(args, "ss:addEnvironmentVar",
-                &name, &value)) return NULL;
-            ConfigRcPtr config = GetEditableConfig(self);
-            config->addEnvironmentVar(name, value);
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getNumEnvironmentVars(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyInt_FromLong(config->getNumEnvironmentVars());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getEnvironmentVarNameByIndex(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            int index = 0;
-            if (!PyArg_ParseTuple(args,"i:getEnvironmentVarNameByIndex",
-                &index)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getEnvironmentVarNameByIndex(index));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getEnvironmentVarDefault(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* name = 0;
-            if (!PyArg_ParseTuple(args, "s:getEnvironmentVarDefault",
-                &name)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            std::string var = config->getEnvironmentVarDefault(name);
-            return PyString_FromString(var.c_str());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getEnvironmentVarDefaults(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            std::map<std::string, std::string> data;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            for(int i = 0; i < config->getNumEnvironmentVars(); ++i) {
-                const char* name = config->getEnvironmentVarNameByIndex(i);
-                const char* value = config->getEnvironmentVarDefault(name);
-                data.insert(std::pair<std::string, std::string>(name, value));
-            }
-            return CreatePyDictFromStringMap(data);
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_clearEnvironmentVars(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConfigRcPtr config = GetEditableConfig(self);
-            config->clearEnvironmentVars();
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getSearchPath(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getSearchPath());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_setSearchPath(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* path = 0;
-            if (!PyArg_ParseTuple(args, "s:setSearchPath",
-                &path)) return NULL;
-            ConfigRcPtr config = GetEditableConfig(self);
-            config->setSearchPath(path);
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getWorkingDir(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getWorkingDir());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_setWorkingDir(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* path = 0;
-            if (!PyArg_ParseTuple(args, "s:setWorkingDir",
-                &path)) return NULL;
-            ConfigRcPtr config = GetEditableConfig(self);
-            config->setWorkingDir(path);
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getNumColorSpaces(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyInt_FromLong(config->getNumColorSpaces());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getColorSpaceNameByIndex(PyObject * self,  PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            int index = 0;
-            if (!PyArg_ParseTuple(args,"i:getColorSpaceNameByIndex",
-                &index)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getColorSpaceNameByIndex(index));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getColorSpaces(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            int numColorSpaces = config->getNumColorSpaces();
-            PyObject* tuple = PyTuple_New(numColorSpaces);
-            for(int i = 0; i < numColorSpaces; ++i)
+enum ConfigIterator
+{
+    IT_ENVIRONMENT_VAR_NAME = 0,
+    IT_SEARCH_PATH,
+    IT_COLOR_SPACE_NAME,
+    IT_COLOR_SPACE,
+    IT_ACTIVE_COLOR_SPACE_NAME,
+    IT_ACTIVE_COLOR_SPACE,
+    IT_ROLE_NAME,
+    IT_ROLE_COLOR_SPACE,
+    IT_DISPLAY,
+    IT_SHARED_VIEW,
+    IT_DISPLAY_VIEW,
+    IT_DISPLAY_VIEW_COLORSPACE,
+    IT_LOOK_NAME,
+    IT_LOOK,
+    IT_VIEW_TRANSFORM_NAME,
+    IT_VIEW_TRANSFORM,
+    IT_NAMED_TRANSFORM_NAME,
+    IT_NAMED_TRANSFORM,
+    IT_ACTIVE_NAMED_TRANSFORM_NAME,
+    IT_ACTIVE_NAMED_TRANSFORM
+};
+
+using EnvironmentVarNameIterator       = PyIterator<ConfigRcPtr, IT_ENVIRONMENT_VAR_NAME>;
+using SearchPathIterator               = PyIterator<ConfigRcPtr, IT_SEARCH_PATH>;
+using ColorSpaceNameIterator           = PyIterator<ConfigRcPtr, 
+                                                    IT_COLOR_SPACE_NAME, 
+                                                    SearchReferenceSpaceType,
+                                                    ColorSpaceVisibility>;
+using ColorSpaceIterator               = PyIterator<ConfigRcPtr, 
+                                                    IT_COLOR_SPACE, 
+                                                    SearchReferenceSpaceType,
+                                                     ColorSpaceVisibility>;
+using ActiveColorSpaceNameIterator     = PyIterator<ConfigRcPtr, IT_ACTIVE_COLOR_SPACE_NAME>;
+using ActiveColorSpaceIterator         = PyIterator<ConfigRcPtr, IT_ACTIVE_COLOR_SPACE>;
+using RoleNameIterator                 = PyIterator<ConfigRcPtr, IT_ROLE_NAME>;
+using RoleColorSpaceIterator           = PyIterator<ConfigRcPtr, IT_ROLE_COLOR_SPACE>;
+using DisplayIterator                  = PyIterator<ConfigRcPtr, IT_DISPLAY>;
+using SharedViewIterator               = PyIterator<ConfigRcPtr, IT_SHARED_VIEW>;
+using ViewIterator                     = PyIterator<ConfigRcPtr, IT_DISPLAY_VIEW, std::string>;
+using ViewForColorSpaceIterator        = PyIterator<ConfigRcPtr, IT_DISPLAY_VIEW_COLORSPACE,
+                                                    std::string, std::string>;
+using LookNameIterator                 = PyIterator<ConfigRcPtr, IT_LOOK_NAME>;
+using LookIterator                     = PyIterator<ConfigRcPtr, IT_LOOK>;
+using ViewTransformNameIterator        = PyIterator<ConfigRcPtr, IT_VIEW_TRANSFORM_NAME>;
+using ViewTransformIterator            = PyIterator<ConfigRcPtr, IT_VIEW_TRANSFORM>;
+using NamedTransformNameIterator       = PyIterator<ConfigRcPtr, IT_NAMED_TRANSFORM_NAME,
+                                                    NamedTransformVisibility>;
+using NamedTransformIterator           = PyIterator<ConfigRcPtr, IT_NAMED_TRANSFORM,
+                                                    NamedTransformVisibility>;
+using ActiveNamedTransformNameIterator = PyIterator<ConfigRcPtr, IT_ACTIVE_NAMED_TRANSFORM_NAME>;
+using ActiveNamedTransformIterator     = PyIterator<ConfigRcPtr, IT_ACTIVE_NAMED_TRANSFORM>;
+
+} // namespace
+
+void bindPyConfig(py::module & m)
+{
+    auto clsConfig = 
+        py::class_<Config, ConfigRcPtr>(
+            m.attr("Config"));
+
+    auto clsEnvironmentVarNameIterator = 
+        py::class_<EnvironmentVarNameIterator>(
+            clsConfig, "EnvironmentVarNameIterator");
+
+    auto clsSearchPathIterator = 
+        py::class_<SearchPathIterator>(
+            clsConfig, "SearchPathIterator");
+
+    auto clsColorSpaceNameIterator = 
+        py::class_<ColorSpaceNameIterator>(
+            clsConfig, "ColorSpaceNameIterator");
+
+    auto clsColorSpaceIterator = 
+        py::class_<ColorSpaceIterator>(
+            clsConfig, "ColorSpaceIterator");
+
+    auto clsActiveColorSpaceNameIterator = 
+        py::class_<ActiveColorSpaceNameIterator>(
+            clsConfig, "ActiveColorSpaceNameIterator");
+
+    auto clsActiveColorSpaceIterator = 
+        py::class_<ActiveColorSpaceIterator>(
+            clsConfig, "ActiveColorSpaceIterator");
+
+    auto clsRoleNameIterator = 
+        py::class_<RoleNameIterator>(
+            clsConfig, "RoleNameIterator");
+
+    auto clsRoleColorSpaceIterator = 
+        py::class_<RoleColorSpaceIterator>(
+            clsConfig, "RoleColorSpaceIterator");
+
+    auto clsDisplayIterator = 
+        py::class_<DisplayIterator>(
+            clsConfig, "DisplayIterator");
+
+    auto clsSharedViewIterator = 
+        py::class_<SharedViewIterator>(
+            clsConfig, "SharedViewIterator");
+
+    auto clsViewIterator = 
+        py::class_<ViewIterator>(
+            clsConfig, "ViewIterator");
+
+    auto clsViewForColorSpaceIterator = 
+        py::class_<ViewForColorSpaceIterator>(
+            clsConfig, "ViewForColorSpaceIterator");
+
+    auto clsLookNameIterator = 
+        py::class_<LookNameIterator>(
+            clsConfig, "LookNameIterator");
+
+    auto clsLookIterator = 
+        py::class_<LookIterator>(
+            clsConfig, "LookIterator");
+
+    auto clsViewTransformNameIterator = 
+        py::class_<ViewTransformNameIterator>(
+            clsConfig, "ViewTransformNameIterator");
+
+    auto clsViewTransformIterator = 
+        py::class_<ViewTransformIterator>(
+            clsConfig, "ViewTransformIterator");
+
+    auto clsNamedTransformNameIterator =
+        py::class_<NamedTransformNameIterator>(
+            clsConfig, "NamedTransformNameIterator");
+
+    auto clsNamedTransformIterator =
+        py::class_<NamedTransformIterator>(
+            clsConfig, "NamedTransformIterator");
+
+    auto clsActiveNamedTransformNameIterator =
+        py::class_<ActiveNamedTransformNameIterator>(
+            clsConfig, "ActiveNamedTransformNameIterator");
+
+    auto clsActiveNamedTransformIterator =
+        py::class_<ActiveNamedTransformIterator>(
+            clsConfig, "ActiveNamedTransformIterator");
+
+    clsConfig
+        .def(py::init(&Config::Create), 
+             DOC(Config, Create))
+
+        .def_static("CreateRaw", &Config::CreateRaw, 
+                    DOC(Config, CreateRaw))
+        .def_static("CreateFromEnv", &Config::CreateFromEnv, 
+                    DOC(Config, CreateFromEnv))
+        .def_static("CreateFromFile", &Config::CreateFromFile, "fileName"_a, 
+                    DOC(Config, CreateFromFile))
+        .def_static("CreateFromStream", [](const std::string & str) 
             {
-                const char* name = config->getColorSpaceNameByIndex(i);
-                ConstColorSpaceRcPtr cs = config->getColorSpace(name);
-                PyObject* pycs = BuildConstPyColorSpace(cs);
-                PyTuple_SetItem(tuple, i, pycs);
-            }
-            return tuple;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getColorSpace(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* name = 0;
-            if (!PyArg_ParseTuple(args,"s:getColorSpace",
-                &name)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return BuildConstPyColorSpace(config->getColorSpace(name));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getIndexForColorSpace(PyObject * self,  PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* name = 0;
-            if (!PyArg_ParseTuple(args,"s:getIndexForColorSpace",
-                &name)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyInt_FromLong(config->getIndexForColorSpace(name));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_addColorSpace(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            ConfigRcPtr config = GetEditableConfig(self);
-            PyObject* pyColorSpace = 0;
-            if (!PyArg_ParseTuple(args, "O:addColorSpace",
-                &pyColorSpace)) return NULL;
-            config->addColorSpace(GetConstColorSpace(pyColorSpace, true));
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_clearColorSpaces(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConfigRcPtr config = GetEditableConfig(self);
-            config->clearColorSpaces();
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_parseColorSpaceFromString(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            char* str = 0;
-            if (!PyArg_ParseTuple(args, "s:parseColorSpaceFromString",
-                &str)) return NULL;
-            const char* cs = config->parseColorSpaceFromString(str);
-            if(cs) return PyString_FromString(cs);
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_isStrictParsingEnabled(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyBool_FromLong(config->isStrictParsingEnabled());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_setStrictParsingEnabled(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            bool enabled = false;
-            if (!PyArg_ParseTuple(args, "O&:setStrictParsingEnabled",
-                ConvertPyObjectToBool, &enabled)) return NULL;
-            ConfigRcPtr config = GetEditableConfig(self);
-            config->setStrictParsingEnabled(enabled);
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_setRole(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            ConfigRcPtr config = GetEditableConfig(self);
-            char* role = 0;
-            char* csname = 0;
-            if (!PyArg_ParseTuple(args, "ss:setRole",
-                &role, &csname)) return NULL;
-            config->setRole(role, csname);
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getNumRoles(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyInt_FromLong(config->getNumRoles());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_hasRole(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* str = 0;
-            if (!PyArg_ParseTuple(args, "s:hasRole",
-                &str)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyBool_FromLong(config->hasRole(str));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getRoleName(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            int index = 0;
-            if (!PyArg_ParseTuple(args,"i:getRoleName",
-                &index)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getRoleName(index));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getDefaultDisplay(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getDefaultDisplay());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getNumDisplays(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyInt_FromLong(config->getNumDisplays());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getDisplay(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            int index = 0;
-            if (!PyArg_ParseTuple(args,"i:getDisplay",
-                &index)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getDisplay(index));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getDisplays(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            std::vector<std::string> data;
-            int numDevices = config->getNumDisplays();
-            for(int i = 0; i < numDevices; ++i)
-                data.push_back(config->getDisplay(i));
-            return CreatePyListFromStringVector(data);
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getDefaultView(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* display = 0;
-            if (!PyArg_ParseTuple(args, "s:getDefaultView",
-                &display)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getDefaultView(display));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getNumViews(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* display = 0;
-            if (!PyArg_ParseTuple(args, "s:getNumViews",
-                &display)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyInt_FromLong(config->getNumViews(display));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getView(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* display = 0;
-            int index = 0;
-            if (!PyArg_ParseTuple(args, "si:getNumViews",
-                &display, &index)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getView(display, index));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getViews(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* display = 0;
-            if (!PyArg_ParseTuple(args, "s:getViews",
-                &display)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            std::vector<std::string> data;
-            int num = config->getNumViews(display);
-            for(int i=0; i < num; ++i)
-                data.push_back(config->getView(display, i));
-            return CreatePyListFromStringVector(data);
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getDisplayColorSpaceName(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* display = 0;
-            char* view = 0;
-            if (!PyArg_ParseTuple(args, "ss:getDisplayColorSpaceName",
-                &display, &view)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getDisplayColorSpaceName(display, view));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getDisplayLooks(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            char* display = 0;
-            char* view = 0;
-            if (!PyArg_ParseTuple(args, "ss:getDisplayLooks",
-                &display, &view)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getDisplayLooks(display, view));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_addDisplay(PyObject * self, PyObject * args, PyObject * kwargs)
-        {
-            OCIO_PYTRY_ENTER()
-            ConfigRcPtr config = GetEditableConfig(self);
-            char* display = 0;
-            char* view = 0;
-            char* colorSpaceName = 0;
-            char* looks = 0;
-            const char * kwlist[] = { "display", "view", "colorSpaceName", "looks",  NULL };
-            if (!PyArg_ParseTupleAndKeywords(args, kwargs, "sss|s",
-                const_cast<char**>(kwlist),
-                &display, &view, &colorSpaceName, &looks))
-                return 0;
-            std::string lookStr;
-            if(looks) lookStr = looks;
-            config->addDisplay(display, view, colorSpaceName, lookStr.c_str());
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_clearDisplays(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConfigRcPtr config = GetEditableConfig(self);
-            config->clearDisplays();
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_setActiveDisplays(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            ConfigRcPtr config = GetEditableConfig(self);
-            char* displays = 0;
-            if (!PyArg_ParseTuple(args, "s:setActiveDisplays",
-                &displays)) return NULL;
-            config->setActiveDisplays(displays);
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getActiveDisplays(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getActiveDisplays());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_setActiveViews(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            ConfigRcPtr config = GetEditableConfig(self);
-            char* views = 0;
-            if (!PyArg_ParseTuple(args, "s:setActiveViews",
-                &views)) return NULL;
-            config->setActiveViews(views);
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getActiveViews(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getActiveViews());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_setDefaultLumaCoefs(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            ConfigRcPtr config = GetEditableConfig(self);
-            PyObject* pyCoef = 0;
-            if (!PyArg_ParseTuple(args, "O:setDefaultLumaCoefs",
-                &pyCoef)) return 0;
-            std::vector<float> coef;
-            if(!FillFloatVectorFromPySequence(pyCoef, coef) || (coef.size() != 3))
+                std::istringstream is(str);
+                return Config::CreateFromStream(is);
+            }, 
+             "str"_a, 
+             DOC(Config, CreateFromStream))
+                    
+        .def("getMajorVersion", &Config::getMajorVersion, 
+             DOC(Config, getMajorVersion))
+        .def("setMajorVersion", &Config::setMajorVersion, "major"_a, 
+             DOC(Config, setMajorVersion))
+        .def("getMinorVersion", &Config::getMinorVersion, 
+             DOC(Config, getMinorVersion))
+        .def("setMinorVersion", &Config::setMinorVersion, "minor"_a, 
+             DOC(Config, setMinorVersion))
+        .def("setVersion", &Config::setVersion, "major"_a, "minor"_a,
+             DOC(Config, setVersion))
+        .def("upgradeToLatestVersion", &Config::upgradeToLatestVersion, 
+             DOC(Config, upgradeToLatestVersion))
+        .def("validate", &Config::validate, 
+             DOC(Config, validate))
+        .def("getName", &Config::getName, 
+             DOC(Config, getName))
+        .def("setName", &Config::setName, "name"_a.none(false), 
+             DOC(Config, setName))
+        .def("getFamilySeparator", &Config::getFamilySeparator, 
+             DOC(Config, getFamilySeparator))
+        .def("setFamilySeparator", &Config::setFamilySeparator, "separator"_a, 
+             DOC(Config, setFamilySeparator))
+        .def("getDescription", &Config::getDescription, 
+             DOC(Config, getDescription))
+        .def("setDescription", &Config::setDescription, "description"_a, 
+             DOC(Config, setDescription))
+        .def("serialize", [](ConfigRcPtr & self, const std::string & fileName) 
             {
-                PyErr_SetString(PyExc_TypeError, "First argument must be a float array, size 3");
-                return 0;
-            }
-            config->setDefaultLumaCoefs(&coef[0]);
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getDefaultLumaCoefs(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            std::vector<float> coef(3);
-            config->getDefaultLumaCoefs(&coef[0]);
-            return CreatePyListFromFloatVector(coef);
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getLook(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            char* str = 0;
-            if (!PyArg_ParseTuple(args, "s:getLook",
-                &str)) return NULL;
-            return BuildConstPyLook(config->getLook(str));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getNumLooks(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyInt_FromLong(config->getNumLooks());
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getLookNameByIndex(PyObject * self, PyObject * args)
-        {
-            OCIO_PYTRY_ENTER()
-            int index = 0;
-            if (!PyArg_ParseTuple(args,"i:getLookNameByIndex",
-                &index)) return NULL;
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            return PyString_FromString(config->getLookNameByIndex(index));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getLooks(PyObject * self, PyObject *)
-        {
-            OCIO_PYTRY_ENTER()
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            int num = config->getNumLooks();
-            PyObject* tuple = PyTuple_New(num);
-            for(int i = 0; i < num; ++i)
+                std::ofstream f(fileName.c_str());
+                self->serialize(f);
+                f.close();
+            }, 
+             "fileName"_a)
+        .def("serialize", [](ConfigRcPtr & self) 
             {
-                const char* name = config->getLookNameByIndex(i);
-                ConstLookRcPtr look = config->getLook(name);
-                PyObject* pylook = BuildConstPyLook(look);
-                PyTuple_SetItem(tuple, i, pylook);
-            }
-            return tuple;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_addLook(PyObject * self, PyObject * args)
+                std::ostringstream os;
+                self->serialize(os);
+                return os.str();
+            }, 
+             DOC(Config, serialize))
+        .def("getCacheID", (const char * (Config::*)() const) &Config::getCacheID, 
+             DOC(Config, getCacheID))
+        .def("getCacheID", 
+             (const char * (Config::*)(const ConstContextRcPtr &) const) &Config::getCacheID, 
+             "context"_a, 
+             DOC(Config, getCacheID))
+
+        // Resources
+        .def("getCurrentContext", &Config::getCurrentContext, 
+             DOC(Config, getCurrentContext))
+        .def("addEnvironmentVar", &Config::addEnvironmentVar, "name"_a, "defaultValue"_a, 
+             DOC(Config, addEnvironmentVar))
+        .def("getEnvironmentVarNames", [](ConfigRcPtr & self) 
+            {
+                return EnvironmentVarNameIterator(self);
+            })
+        .def("getEnvironmentVarDefault", &Config::getEnvironmentVarDefault, "name"_a, 
+             DOC(Config, getEnvironmentVarDefault))
+        .def("clearEnvironmentVars", &Config::clearEnvironmentVars, 
+             DOC(Config, clearEnvironmentVars))
+        .def("setEnvironmentMode", &Config::setEnvironmentMode, "mode"_a, 
+             DOC(Config, setEnvironmentMode))
+        .def("getEnvironmentMode", &Config::getEnvironmentMode, 
+             DOC(Config, getEnvironmentMode))
+        .def("loadEnvironment", &Config::loadEnvironment, 
+             DOC(Config, loadEnvironment))
+        .def("getSearchPath", (const char * (Config::*)() const) &Config::getSearchPath, 
+             DOC(Config, getSearchPath))
+        .def("setSearchPath", &Config::setSearchPath, "path"_a, 
+             DOC(Config, setSearchPath))
+        .def("getSearchPaths", [](ConfigRcPtr & self) 
+            { 
+                return SearchPathIterator(self); 
+            })
+        .def("clearSearchPaths", &Config::clearSearchPaths, 
+             DOC(Config, clearSearchPaths))
+        .def("addSearchPath", &Config::addSearchPath, "path"_a, 
+             DOC(Config, addSearchPath))
+        .def("getWorkingDir", &Config::getWorkingDir, 
+             DOC(Config, getWorkingDir))
+        .def("setWorkingDir", &Config::setWorkingDir, "dirName"_a, 
+             DOC(Config, setWorkingDir))
+
+        // ColorSpaces
+        .def("getColorSpaces", &Config::getColorSpaces, "category"_a, 
+             DOC(Config, getColorSpaces))
+        .def("getColorSpace", &Config::getColorSpace, "name"_a, 
+             DOC(Config, getColorSpace))
+        .def("getColorSpaceNames", [](ConfigRcPtr & self, 
+                                      SearchReferenceSpaceType searchReferenceType, 
+                                      ColorSpaceVisibility visibility) 
+            {
+                return ColorSpaceNameIterator(self, searchReferenceType, visibility);
+            },
+             "searchReferenceType"_a, "visibility"_a)
+        .def("getColorSpaces", [](ConfigRcPtr & self, 
+                                  SearchReferenceSpaceType searchReferenceType, 
+                                  ColorSpaceVisibility visibility) 
+            {
+                return ColorSpaceIterator(self, searchReferenceType, visibility);
+            },
+             "searchReferenceType"_a, "visibility"_a)
+        .def("getColorSpaceNames", [](ConfigRcPtr & self) 
+            {
+                return ActiveColorSpaceNameIterator(self);
+            })
+        .def("getColorSpaces", [](ConfigRcPtr & self) 
+            {
+                return ActiveColorSpaceIterator(self);
+            })
+        .def("getCanonicalName", &Config::getCanonicalName, "name"_a,
+             DOC(Config, getCanonicalName))
+        .def("addColorSpace", &Config::addColorSpace, "colorSpace"_a, 
+             DOC(Config, addColorSpace))
+        .def("removeColorSpace", &Config::removeColorSpace, "name"_a, 
+             DOC(Config, removeColorSpace))
+        .def("isColorSpaceUsed", &Config::isColorSpaceUsed, "name"_a, 
+             DOC(Config, isColorSpaceUsed))
+        .def("clearColorSpaces", &Config::clearColorSpaces, 
+             DOC(Config, clearColorSpaces))
+        .def("parseColorSpaceFromString", &Config::parseColorSpaceFromString, "str"_a, 
+             DOC(Config, parseColorSpaceFromString))
+        .def("isStrictParsingEnabled", &Config::isStrictParsingEnabled, 
+             DOC(Config, isStrictParsingEnabled))
+        .def("setStrictParsingEnabled", &Config::setStrictParsingEnabled, "enabled"_a,
+             DOC(Config, setStrictParsingEnabled))
+        .def("setInactiveColorSpaces", &Config::setInactiveColorSpaces, "inactiveColorSpaces"_a,
+             DOC(Config, setInactiveColorSpaces))
+        .def("getInactiveColorSpaces", &Config::getInactiveColorSpaces, 
+             DOC(Config, getInactiveColorSpaces))
+
+        // Roles
+        .def("setRole", &Config::setRole, "role"_a, "colorSpaceName"_a, 
+             DOC(Config, setRole))
+        .def("hasRole", &Config::hasRole, "role"_a, 
+             DOC(Config, hasRole))
+        .def("getRoleNames", [](ConfigRcPtr & self) 
+            { 
+                return RoleNameIterator(self); 
+            })
+        .def("getRoles", [](ConfigRcPtr & self) 
+            { 
+                return RoleColorSpaceIterator(self); 
+            })
+
+        // Display/View Registration
+        .def("addSharedView",
+             (void (Config::*)(const char *,
+                               const char *,
+                               const char *,
+                               const char *,
+                               const char *,
+                               const char *)) &Config::addSharedView,
+             "view"_a, "viewTransformName"_a, "colorSpaceName"_a, 
+             "looks"_a = "",
+             "ruleName"_a = "", 
+             "description"_a = "", 
+             DOC(Config, addSharedView))
+        .def("removeSharedView", &Config::removeSharedView, "view"_a, 
+             DOC(Config, removeSharedView))
+        .def("getSharedViews", [](ConfigRcPtr & self) 
+            { 
+                return SharedViewIterator(self); 
+            })
+        .def("getDefaultDisplay", &Config::getDefaultDisplay, 
+             DOC(Config, getDefaultDisplay))
+        .def("getDisplays", [](ConfigRcPtr & self) 
+            { 
+                return DisplayIterator(self); 
+            })
+        .def("getDefaultView", &Config::getDefaultView, "display"_a, 
+             DOC(Config, getDefaultView))
+        .def("getViews", [](ConfigRcPtr & self, const std::string & display)
+             {
+                 return ViewIterator(self, display);
+             },
+             "display"_a)
+        .def("getViews", [](ConfigRcPtr & self, 
+                            const std::string & display, 
+                            const std::string & colorSpaceName)
+             {
+                 return ViewForColorSpaceIterator(self, display, colorSpaceName);
+             },
+             "display"_a, "colorSpaceName"_a)
+        .def("getDisplayViewTransformName", &Config::getDisplayViewTransformName, 
+             "display"_a, "view"_a, 
+             DOC(Config, getDisplayViewTransformName))
+        .def("getDisplayViewColorSpaceName", &Config::getDisplayViewColorSpaceName, 
+             "display"_a, "view"_a, 
+             DOC(Config, getDisplayViewColorSpaceName))
+        .def("getDisplayViewLooks", &Config::getDisplayViewLooks, "display"_a, "view"_a, 
+             DOC(Config, getDisplayViewLooks))
+        .def("getDisplayViewRule", &Config::getDisplayViewRule, "display"_a, "view"_a, 
+             DOC(Config, getDisplayViewRule))
+        .def("getDisplayViewDescription", &Config::getDisplayViewDescription, 
+             "display"_a, "view"_a, 
+             DOC(Config, getDisplayViewDescription))
+        .def("addDisplayView", 
+             (void (Config::*)(const char *, const char *, const char *, const char *)) 
+             &Config::addDisplayView, 
+             "display"_a, "view"_a, "colorSpaceName"_a, 
+             "looks"_a = "", 
+             DOC(Config, addDisplayView))
+        .def("addDisplayView", 
+             (void (Config::*)(const char *, 
+                               const char *, 
+                               const char *, 
+                               const char *, 
+                               const char *,
+                               const char *,
+                               const char *)) &Config::addDisplayView, 
+             "display"_a, "view"_a, "viewTransform"_a, "displayColorSpaceName"_a, 
+             "looks"_a = "",
+             "ruleName"_a = "", 
+             "description"_a = "", 
+             DOC(Config, addDisplayView))
+        .def("addDisplaySharedView", &Config::addDisplaySharedView, "display"_a, "view"_a, 
+             DOC(Config, addDisplaySharedView))
+        .def("removeDisplayView", &Config::removeDisplayView, "display"_a, "view"_a, 
+             DOC(Config, removeDisplayView))
+        .def("clearDisplays", &Config::clearDisplays, 
+             DOC(Config, clearDisplays))
+        .def("setActiveDisplays", &Config::setActiveDisplays, "displays"_a, 
+             DOC(Config, setActiveDisplays))
+        .def("getActiveDisplays", &Config::getActiveDisplays, 
+             DOC(Config, getActiveDisplays))
+        .def("setActiveViews", &Config::setActiveViews, "views"_a, 
+             DOC(Config, setActiveViews))
+        .def("getActiveViews", &Config::getActiveViews, 
+             DOC(Config, getActiveViews))
+
+        // Luma
+        .def("getDefaultLumaCoefs", [](ConfigRcPtr & self)
+            {
+                std::array<double, 3> rgb;
+                self->getDefaultLumaCoefs(rgb.data());
+                return rgb;
+            }, 
+             DOC(Config, getDefaultLumaCoefs))
+        .def("setDefaultLumaCoefs", [](ConfigRcPtr & self, const std::array<double, 3> & rgb)
+            {
+                self->setDefaultLumaCoefs(rgb.data());
+            }, 
+             "rgb"_a, 
+             DOC(Config, setDefaultLumaCoefs))
+
+        // Look
+        .def("getLook", &Config::getLook, "name"_a, 
+             DOC(Config, getLook))
+        .def("getLookNames", [](ConfigRcPtr & self) 
+            { 
+                return LookNameIterator(self); 
+            })
+        .def("getLooks", [](ConfigRcPtr & self) 
+            { 
+                return LookIterator(self); 
+            })
+        .def("addLook", &Config::addLook, "look"_a, 
+             DOC(Config, addLook))
+        .def("clearLooks", &Config::clearLooks, 
+             DOC(Config, clearLooks))
+
+        // View Transforms
+        .def("getViewTransform", &Config::getViewTransform, "name"_a, 
+             DOC(Config, getViewTransform))
+        .def("getViewTransformNames", [](ConfigRcPtr & self) 
+            { 
+                return ViewTransformNameIterator(self); 
+            })
+        .def("getViewTransforms", [](ConfigRcPtr & self) 
+            { 
+                return ViewTransformIterator(self); 
+            })
+        .def("addViewTransform", &Config::addViewTransform, "viewTransform"_a,
+             DOC(Config, addViewTransform))
+        .def("getDefaultSceneToDisplayViewTransform", 
+             &Config::getDefaultSceneToDisplayViewTransform, 
+             DOC(Config, getDefaultSceneToDisplayViewTransform))
+        .def("getDefaultViewTransformName",
+            &Config::getDefaultViewTransformName,
+            DOC(Config, getDefaultViewTransformName))
+        .def("setDefaultViewTransformName",
+            &Config::setDefaultViewTransformName, "name"_a.none(false),
+            DOC(Config, setDefaultViewTransformName))
+        .def("clearViewTransforms", &Config::clearViewTransforms, 
+             DOC(Config, clearViewTransforms))
+
+        // Named Transforms.
+        .def("getNamedTransform", &Config::getNamedTransform, "name"_a)
+
+        .def("getNamedTransformNames", [](ConfigRcPtr & self,
+                                          NamedTransformVisibility visibility)
+            {
+                return NamedTransformNameIterator(self, visibility);
+            }, "visibility"_a)
+        .def("getNamedTransforms", [](ConfigRcPtr & self,
+                                      NamedTransformVisibility visibility)
+            {
+                return NamedTransformIterator(self, visibility);
+            }, "visibility"_a)
+
+        .def("getNamedTransformNames", [](ConfigRcPtr & self)
         {
-            OCIO_PYTRY_ENTER()
-            ConfigRcPtr config = GetEditableConfig(self);
-            PyObject * pyLook = 0;
-            if (!PyArg_ParseTuple(args, "O:addLook",
-                &pyLook)) return NULL;
-            config->addLook(GetConstLook(pyLook, true));
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_clearLooks(PyObject * self, PyObject *)
+                return ActiveNamedTransformNameIterator(self);
+        })
+        .def("getNamedTransforms", [](ConfigRcPtr & self)
         {
-            OCIO_PYTRY_ENTER()
-            ConfigRcPtr config = GetEditableConfig(self);
-            config->clearLooks();
-            Py_RETURN_NONE;
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-        PyObject * PyOCIO_Config_getProcessor(PyObject * self, PyObject * args, PyObject * kwargs)
-        {
-            OCIO_PYTRY_ENTER()
-            
-            // We want this call to be as flexible as possible.
-            // arg1 will either be a PyTransform
-            // or arg1, arg2 will be {str, ColorSpace}
-            PyObject* arg1 = Py_None;
-            PyObject* arg2 = Py_None;
-            
-            const char* direction = 0;
-            PyObject* pycontext = Py_None;
-            
-            const char* kwlist[] = { "arg1", "arg2", "direction", "context",  NULL };
-            
-            if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|OsO",
-                const_cast<char**>(kwlist),
-                &arg1, &arg2, &direction, &pycontext)) return 0;
-            
-            ConstConfigRcPtr config = GetConstConfig(self, true);
-            
-            // Parse the direction string
-            TransformDirection dir = TRANSFORM_DIR_FORWARD;
-            if(direction) dir = TransformDirectionFromString(direction);
-            
-            // Parse the context
-            ConstContextRcPtr context;
-            if(pycontext != Py_None) context = GetConstContext(pycontext, true);
-            if(!context) context = config->getCurrentContext();
+                return ActiveNamedTransformIterator(self);
+        })
+        .def("addNamedTransform", &Config::addNamedTransform, "namedTransform"_a)
+        .def("clearNamedTransforms", &Config::clearNamedTransforms)
+
+        // Viewing Rules
+        .def("getViewingRules", &Config::getViewingRules, 
+             DOC(Config, getViewingRules))
+        .def("setViewingRules", &Config::setViewingRules, "ViewingRules"_a, 
+             DOC(Config, setViewingRules))
+
+        // File Rules
+        .def("getFileRules", &Config::getFileRules, 
+             DOC(Config, getFileRules))
+        .def("setFileRules", &Config::setFileRules, "fileRules"_a, 
+             DOC(Config, setFileRules))
+        .def("getColorSpaceFromFilepath",
+            [](ConfigRcPtr & self, const std::string & filePath)
+            {
+                size_t ruleIndex = 0;
+                std::string csName = self->getColorSpaceFromFilepath(filePath.c_str(), ruleIndex);
+                return py::make_tuple(csName, ruleIndex);
+            }, "filePath"_a, 
+            DOC(Config, getColorSpaceFromFilepath))
+        .def("filepathOnlyMatchesDefaultRule", &Config::filepathOnlyMatchesDefaultRule, 
+             "filePath"_a, 
+             DOC(Config, filepathOnlyMatchesDefaultRule))
+
+        // Processors
+        .def("getProcessor", 
+             (ConstProcessorRcPtr (Config::*)(const ConstColorSpaceRcPtr &, 
+                                              const ConstColorSpaceRcPtr &) const) 
+             &Config::getProcessor, 
+             "srcColorSpace"_a, "dstColorSpace"_a, 
+             DOC(Config, getProcessor))
+        .def("getProcessor", 
+             (ConstProcessorRcPtr (Config::*)(const ConstContextRcPtr &, 
+                                              const ConstColorSpaceRcPtr &, 
+                                              const ConstColorSpaceRcPtr &) const) 
+             &Config::getProcessor, 
+             "context"_a, "srcColorSpace"_a, "dstColorSpace"_a, 
+             DOC(Config, getProcessor, 2))
+        .def("getProcessor", 
+             (ConstProcessorRcPtr (Config::*)(const char *, const char *) const) 
+             &Config::getProcessor, 
+             "srcColorSpaceName"_a, "dstColorSpaceName"_a, 
+             DOC(Config, getProcessor, 3))
+        .def("getProcessor", 
+             (ConstProcessorRcPtr (Config::*)(const ConstContextRcPtr &, 
+                                              const char *, 
+                                              const char *) const) 
+             &Config::getProcessor, 
+             "context"_a, "srcColorSpaceName"_a, "dstColorSpaceName"_a, 
+             DOC(Config, getProcessor, 4))
+        .def("getProcessor", 
+             (ConstProcessorRcPtr (Config::*)(const char *,
+                                              const char *,
+                                              const char *,
+                                              TransformDirection) const) 
+             &Config::getProcessor, 
+             "srcColorSpaceName"_a, "display"_a, "view"_a, "direction"_a, 
+             DOC(Config, getProcessor, 5))
+        .def("getProcessor", 
+             (ConstProcessorRcPtr (Config::*)(const ConstContextRcPtr &, 
+                                              const char *, 
+                                              const char *, 
+                                              const char *,
+                                              TransformDirection) const) 
+             &Config::getProcessor, 
+             "context"_a, "srcColorSpaceName"_a, "display"_a, "view"_a, "direction"_a, 
+             DOC(Config, getProcessor, 6))
+        .def("getProcessor", 
+             (ConstProcessorRcPtr (Config::*)(const ConstTransformRcPtr &) const) 
+             &Config::getProcessor, 
+             "transform"_a, 
+             DOC(Config, getProcessor, 7))
+        .def("getProcessor", 
+             (ConstProcessorRcPtr (Config::*)(const ConstTransformRcPtr &, 
+                                              TransformDirection) const) 
+             &Config::getProcessor, 
+             "transform"_a, "direction"_a, 
+             DOC(Config, getProcessor, 8))
+        .def("getProcessor", 
+             (ConstProcessorRcPtr (Config::*)(const ConstContextRcPtr &, 
+                                              const ConstTransformRcPtr &, 
+                                              TransformDirection) const) 
+             &Config::getProcessor, 
+             "context"_a, "transform"_a, "direction"_a, 
+             DOC(Config, getProcessor, 9))
+
+        .def_static("GetProcessorFromConfigs", [](const ConstConfigRcPtr & srcConfig,
+                                                  const char * srcColorSpaceName,
+                                                  const ConstConfigRcPtr & dstConfig,
+                                                  const char * dstColorSpaceName)
+            {
+                return Config::GetProcessorFromConfigs(srcConfig, srcColorSpaceName,
+                                                       dstConfig, dstColorSpaceName);
+            },
+                    "srcConfig"_a, "srcColorSpaceName"_a, "dstConfig"_a, "dstColorSpaceName"_a, 
+                    DOC(Config, GetProcessorFromConfigs))
+        .def_static("GetProcessorFromConfigs", [](const ConstContextRcPtr & srcContext,
+                                                  const ConstConfigRcPtr & srcConfig,
+                                                  const char * srcColorSpaceName,
+                                                  const ConstContextRcPtr & dstContext,
+                                                  const ConstConfigRcPtr & dstConfig,
+                                                  const char * dstColorSpaceName)
+            {
+                return Config::GetProcessorFromConfigs(srcContext, srcConfig, srcColorSpaceName,
+                                                       dstContext, dstConfig, dstColorSpaceName);
+            },
+                    "srcContext"_a, "srcConfig"_a, "srcColorSpaceName"_a, 
+                    "dstContext"_a, "dstConfig"_a, "dstColorSpaceName"_a, 
+                    DOC(Config, GetProcessorFromConfigs, 2))
+        .def_static("GetProcessorFromConfigs", [](const ConstConfigRcPtr & srcConfig,
+                                                  const char * srcColorSpaceName,
+                                                  const char * srcInterchangeName,
+                                                  const ConstConfigRcPtr & dstConfig,
+                                                  const char * dstColorSpaceName,
+                                                  const char * dstInterchangeName)
+            {
+                return Config::GetProcessorFromConfigs(srcConfig, 
+                                                       srcColorSpaceName, 
+                                                       srcInterchangeName,
+                                                       dstConfig, 
+                                                       dstColorSpaceName, 
+                                                       dstInterchangeName);
+            }, 
+                    "srcConfig"_a, "srcColorSpaceName"_a, "srcInterchangeName"_a, 
+                    "dstConfig"_a, "dstColorSpaceName"_a, "dstInterchangeName"_a, 
+                    DOC(Config, GetProcessorFromConfigs, 3))
+        .def_static("GetProcessorFromConfigs", [](const ConstContextRcPtr & srcContext,
+                                                  const ConstConfigRcPtr & srcConfig,
+                                                  const char * srcColorSpaceName,
+                                                  const char * srcInterchangeName,
+                                                  const ConstContextRcPtr & dstContext,
+                                                  const ConstConfigRcPtr & dstConfig,
+                                                  const char * dstColorSpaceName,
+                                                  const char * dstInterchangeName)
+            {
+                return Config::GetProcessorFromConfigs(srcContext, 
+                                                       srcConfig, 
+                                                       srcColorSpaceName, 
+                                                       srcInterchangeName,
+                                                       dstContext, 
+                                                       dstConfig, 
+                                                       dstColorSpaceName, 
+                                                       dstInterchangeName);
+            }, 
+                    "srcContext"_a, "srcConfig"_a, "srcColorSpaceName"_a, "srcInterchangeName"_a, 
+                    "dstContext"_a, "dstConfig"_a, "dstColorSpaceName"_a, "dstInterchangeName"_a, 
+                    DOC(Config, GetProcessorFromConfigs, 4))
+
+        .def("setProcessorCacheFlags", &Config::setProcessorCacheFlags, "flags"_a, 
+             DOC(Config, setProcessorCacheFlags))
                 
-            if(IsPyTransform(arg1)) {
-                ConstTransformRcPtr transform = GetConstTransform(arg1, true);
-                return BuildConstPyProcessor(config->getProcessor(context, transform, dir));
-            }
-            
-            // Any two (Colorspaces, colorspace name, roles)
-            ConstColorSpaceRcPtr cs1;
-            if(IsPyColorSpace(arg1))
-                cs1 = GetConstColorSpace(arg1, true);
-            else if(PyString_Check(arg1))
-                cs1 = config->getColorSpace(PyString_AsString(arg1));
-            if(!cs1)
+        .def("__str__", [](ConfigRcPtr & self)
             {
-                PyErr_SetString(PyExc_ValueError,
-                    "Could not parse first arg. Allowed types include ColorSpace, ColorSpace name, Role.");
-                return NULL;
-            }
-            
-            ConstColorSpaceRcPtr cs2;
-            if(IsPyColorSpace(arg2))
-                cs2 = GetConstColorSpace(arg2, true);
-            else if(PyString_Check(arg2))
-                cs2 = config->getColorSpace(PyString_AsString(arg2));
-            if(!cs2)
+                std::ostringstream os;
+                os << (*self);
+                return os.str();
+            })
+        .def("__repr__", [](ConfigRcPtr & self)
             {
-                PyErr_SetString(PyExc_ValueError,
-                    "Could not parse second arg. Allowed types include ColorSpace, ColorSpace name, Role.");
-                return NULL;
-            }
-            
-            return BuildConstPyProcessor(config->getProcessor(context, cs1, cs2));
-            OCIO_PYTRY_EXIT(NULL)
-        }
-        
-    }
+                std::ostringstream os;
+                os << "<Config name=";
+                std::string name{ self->getName() };
+                if (!name.empty())
+                {
+                    os << name;
+                }
+                os << ", description=";
+                std::string desc{ self->getDescription() };
+                if (!desc.empty())
+                {
+                    os << desc;
+                }
+                os << ", ocio_profile_version=" << self->getMajorVersion();
+                const unsigned int minor = self->getMinorVersion();
+                if (minor)
+                {
+                    os << "." << minor;
+                }
+                os << ", active_colorspaces=" << self->getNumColorSpaces();
+                os << ", active_displays=" << self->getNumDisplays();
+                os << ">";
+                return os.str();
+            });
 
+    clsEnvironmentVarNameIterator
+        .def("__len__", [](EnvironmentVarNameIterator & it) 
+            { 
+                return it.m_obj->getNumEnvironmentVars(); 
+            })
+        .def("__getitem__", [](EnvironmentVarNameIterator & it, int i) 
+            { 
+                it.checkIndex(i, it.m_obj->getNumEnvironmentVars());
+                return it.m_obj->getEnvironmentVarNameByIndex(i);
+            })
+        .def("__iter__", [](EnvironmentVarNameIterator & it) -> EnvironmentVarNameIterator & 
+            { 
+                return it; 
+            })
+        .def("__next__", [](EnvironmentVarNameIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumEnvironmentVars());
+                return it.m_obj->getEnvironmentVarNameByIndex(i);
+            });
+
+    clsSearchPathIterator
+        .def("__len__", [](SearchPathIterator & it) 
+            { 
+                return it.m_obj->getNumSearchPaths(); 
+            })
+        .def("__getitem__", [](SearchPathIterator & it, int i) 
+            { 
+                it.checkIndex(i, it.m_obj->getNumSearchPaths());
+                return it.m_obj->getSearchPath(i);
+            })
+        .def("__iter__", [](SearchPathIterator & it) -> SearchPathIterator & { return it; })
+        .def("__next__", [](SearchPathIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumSearchPaths());
+                return it.m_obj->getSearchPath(i);
+            });
+
+    clsColorSpaceNameIterator
+        .def("__len__", [](ColorSpaceNameIterator & it) 
+            { 
+                return it.m_obj->getNumColorSpaces(std::get<0>(it.m_args), std::get<1>(it.m_args)); 
+            })
+        .def("__getitem__", [](ColorSpaceNameIterator & it, int i) 
+            { 
+                it.checkIndex(i, it.m_obj->getNumColorSpaces(std::get<0>(it.m_args), 
+                                                             std::get<1>(it.m_args)));
+                return it.m_obj->getColorSpaceNameByIndex(std::get<0>(it.m_args), 
+                                                          std::get<1>(it.m_args), 
+                                                          i);
+            })
+        .def("__iter__", [](ColorSpaceNameIterator & it) -> ColorSpaceNameIterator & 
+            { 
+                return it; 
+            })
+        .def("__next__", [](ColorSpaceNameIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumColorSpaces(std::get<0>(it.m_args), 
+                                                                 std::get<1>(it.m_args)));
+                return it.m_obj->getColorSpaceNameByIndex(std::get<0>(it.m_args), 
+                                                          std::get<1>(it.m_args), 
+                                                          i);
+            });
+
+    clsColorSpaceIterator
+        .def("__len__", [](ColorSpaceIterator & it) 
+            { 
+                return it.m_obj->getNumColorSpaces(std::get<0>(it.m_args), std::get<1>(it.m_args)); 
+            })
+        .def("__getitem__", [](ColorSpaceIterator & it, int i) 
+            { 
+                it.checkIndex(i, it.m_obj->getNumColorSpaces(std::get<0>(it.m_args), 
+                                                             std::get<1>(it.m_args)));
+                const char * name = it.m_obj->getColorSpaceNameByIndex(std::get<0>(it.m_args), 
+                                                                       std::get<1>(it.m_args), 
+                                                                       i);
+                return it.m_obj->getColorSpace(name);
+            })
+        .def("__iter__", [](ColorSpaceIterator & it) -> ColorSpaceIterator & { return it; })
+        .def("__next__", [](ColorSpaceIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumColorSpaces(std::get<0>(it.m_args), 
+                                                                 std::get<1>(it.m_args)));
+                const char * name = it.m_obj->getColorSpaceNameByIndex(std::get<0>(it.m_args), 
+                                                                       std::get<1>(it.m_args), 
+                                                                       i);
+                return it.m_obj->getColorSpace(name);
+            });
+
+    clsActiveColorSpaceNameIterator
+        .def("__len__", [](ActiveColorSpaceNameIterator & it) 
+            { 
+                return it.m_obj->getNumColorSpaces(); 
+            })
+        .def("__getitem__", [](ActiveColorSpaceNameIterator & it, int i) 
+            { 
+                it.checkIndex(i, it.m_obj->getNumColorSpaces());
+                return it.m_obj->getColorSpaceNameByIndex(i);
+            })
+        .def("__iter__", [](ActiveColorSpaceNameIterator & it) -> ActiveColorSpaceNameIterator & 
+            { 
+                return it; 
+            })
+        .def("__next__", [](ActiveColorSpaceNameIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumColorSpaces());
+                return it.m_obj->getColorSpaceNameByIndex(i);
+            });
+
+    clsActiveColorSpaceIterator
+        .def("__len__", [](ActiveColorSpaceIterator & it) 
+            { 
+                return it.m_obj->getNumColorSpaces(); 
+            })
+        .def("__getitem__", [](ActiveColorSpaceIterator & it, int i) 
+            { 
+                it.checkIndex(i, it.m_obj->getNumColorSpaces());
+                const char * name = it.m_obj->getColorSpaceNameByIndex(i);
+                return it.m_obj->getColorSpace(name);
+            })
+        .def("__iter__", [](ActiveColorSpaceIterator & it) -> ActiveColorSpaceIterator & 
+            { 
+                return it; 
+            })
+        .def("__next__", [](ActiveColorSpaceIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumColorSpaces());
+                const char * name = it.m_obj->getColorSpaceNameByIndex(i);
+                return it.m_obj->getColorSpace(name);
+            });
+
+    clsRoleNameIterator
+        .def("__len__", [](RoleNameIterator & it) { return it.m_obj->getNumRoles(); })
+        .def("__getitem__", [](RoleNameIterator & it, int i) 
+            { 
+                it.checkIndex(i, it.m_obj->getNumRoles());
+                return it.m_obj->getRoleName(i);
+            })
+        .def("__iter__", [](RoleNameIterator & it) -> RoleNameIterator & { return it; })
+        .def("__next__", [](RoleNameIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumRoles());
+                return it.m_obj->getRoleName(i);
+            });
+
+    clsRoleColorSpaceIterator
+        .def("__len__", [](RoleColorSpaceIterator & it) { return it.m_obj->getNumRoles(); })
+        .def("__getitem__", [](RoleColorSpaceIterator & it, int i) 
+            { 
+                it.checkIndex(i, it.m_obj->getNumRoles());
+                return py::make_tuple(it.m_obj->getRoleName(i), 
+                                      it.m_obj->getRoleColorSpace(i));
+            })
+        .def("__iter__", [](RoleColorSpaceIterator & it) -> RoleColorSpaceIterator & 
+            { 
+                return it; 
+            })
+        .def("__next__", [](RoleColorSpaceIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumRoles());
+                return py::make_tuple(it.m_obj->getRoleName(i), 
+                                      it.m_obj->getRoleColorSpace(i));
+            });
+
+    clsDisplayIterator
+        .def("__len__", [](DisplayIterator & it) { return it.m_obj->getNumDisplays(); })
+        .def("__getitem__", [](DisplayIterator & it, int i) 
+            { 
+                it.checkIndex(i, it.m_obj->getNumDisplays());
+                return it.m_obj->getDisplay(i);
+            })
+        .def("__iter__", [](DisplayIterator & it) -> DisplayIterator & { return it; })
+        .def("__next__", [](DisplayIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumDisplays());
+                return it.m_obj->getDisplay(i);
+            });
+
+    clsSharedViewIterator
+        .def("__len__", [](SharedViewIterator & it) { return it.m_obj->getNumViews(VIEW_SHARED,
+                                                                                   nullptr); })
+        .def("__getitem__", [](SharedViewIterator & it, int i)
+            { 
+                it.checkIndex(i, it.m_obj->getNumViews(VIEW_SHARED, nullptr));
+                return it.m_obj->getView(VIEW_SHARED, nullptr, i);
+            })
+        .def("__iter__", [](SharedViewIterator & it) -> SharedViewIterator & { return it; })
+        .def("__next__", [](SharedViewIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumViews(VIEW_SHARED, nullptr));
+                return it.m_obj->getView(VIEW_SHARED, nullptr, i);
+            });
+
+    clsViewIterator
+        .def("__len__", [](ViewIterator & it)
+                        { return it.m_obj->getNumViews(std::get<0>(it.m_args).c_str()); })
+        .def("__getitem__", [](ViewIterator & it, int i)
+            { 
+                it.checkIndex(i, it.m_obj->getNumViews(std::get<0>(it.m_args).c_str()));
+                return it.m_obj->getView(std::get<0>(it.m_args).c_str(), i);
+            })
+        .def("__iter__", [](ViewIterator & it) -> ViewIterator & { return it; })
+        .def("__next__", [](ViewIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumViews(std::get<0>(it.m_args).c_str()));
+                return it.m_obj->getView(std::get<0>(it.m_args).c_str(), i);
+            });
+
+    clsViewForColorSpaceIterator
+        .def("__len__", [](ViewForColorSpaceIterator & it)
+                        { return it.m_obj->getNumViews(std::get<0>(it.m_args).c_str(),
+                                                       std::get<1>(it.m_args).c_str()); })
+        .def("__getitem__", [](ViewForColorSpaceIterator & it, int i)
+            { 
+                it.checkIndex(i, it.m_obj->getNumViews(std::get<0>(it.m_args).c_str(),
+                                                       std::get<1>(it.m_args).c_str()));
+                return it.m_obj->getView(std::get<0>(it.m_args).c_str(),
+                                         std::get<1>(it.m_args).c_str(), i);
+            })
+        .def("__iter__", [](ViewForColorSpaceIterator & it) -> ViewForColorSpaceIterator & { return it; })
+        .def("__next__", [](ViewForColorSpaceIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumViews(std::get<0>(it.m_args).c_str(),
+                                                           std::get<1>(it.m_args).c_str()));
+                return it.m_obj->getView(std::get<0>(it.m_args).c_str(),
+                                         std::get<1>(it.m_args).c_str(), i);
+            });
+
+    clsLookNameIterator
+        .def("__len__", [](LookNameIterator & it) { return it.m_obj->getNumLooks(); })
+        .def("__getitem__", [](LookNameIterator & it, int i) 
+            { 
+                it.checkIndex(i, it.m_obj->getNumLooks());
+                return it.m_obj->getLookNameByIndex(i);
+            })
+        .def("__iter__", [](LookNameIterator & it) -> LookNameIterator & { return it; })
+        .def("__next__", [](LookNameIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumLooks());
+                return it.m_obj->getLookNameByIndex(i);
+            });
+
+    clsLookIterator
+        .def("__len__", [](LookIterator & it) { return it.m_obj->getNumLooks(); })
+        .def("__getitem__", [](LookIterator & it, int i) 
+            { 
+                it.checkIndex(i, it.m_obj->getNumLooks());
+                const char * name = it.m_obj->getLookNameByIndex(i);
+                return it.m_obj->getLook(name);
+            })
+        .def("__iter__", [](LookIterator & it) -> LookIterator & { return it; })
+        .def("__next__", [](LookIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumLooks());
+                const char * name = it.m_obj->getLookNameByIndex(i);
+                return it.m_obj->getLook(name);
+            });
+
+    clsViewTransformNameIterator
+        .def("__len__", [](ViewTransformNameIterator & it) 
+            { 
+                return it.m_obj->getNumViewTransforms(); 
+            })
+        .def("__getitem__", [](ViewTransformNameIterator & it, int i) 
+            { 
+                it.checkIndex(i, it.m_obj->getNumViewTransforms());
+                return it.m_obj->getViewTransformNameByIndex(i);
+            })
+        .def("__iter__", [](ViewTransformNameIterator & it) -> ViewTransformNameIterator & 
+            { 
+                return it; 
+            })
+        .def("__next__", [](ViewTransformNameIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumViewTransforms());
+                return it.m_obj->getViewTransformNameByIndex(i);
+            });
+
+    clsViewTransformIterator
+        .def("__len__", [](ViewTransformIterator & it) 
+            { 
+                return it.m_obj->getNumViewTransforms(); 
+            })
+        .def("__getitem__", [](ViewTransformIterator & it, int i) 
+            { 
+                it.checkIndex(i, it.m_obj->getNumViewTransforms());
+                const char * name = it.m_obj->getViewTransformNameByIndex(i);
+                return it.m_obj->getViewTransform(name);
+            })
+        .def("__iter__", [](ViewTransformIterator & it) -> ViewTransformIterator & 
+            { 
+                return it; 
+            })
+        .def("__next__", [](ViewTransformIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumViewTransforms());
+                const char * name = it.m_obj->getViewTransformNameByIndex(i);
+                return it.m_obj->getViewTransform(name);
+            });
+
+    clsNamedTransformNameIterator
+        .def("__len__", [](NamedTransformNameIterator & it)
+            {
+                return it.m_obj->getNumNamedTransforms(std::get<0>(it.m_args));
+            })
+        .def("__getitem__", [](NamedTransformNameIterator & it, int i)
+            {
+                it.checkIndex(i, it.m_obj->getNumNamedTransforms(std::get<0>(it.m_args)));
+                return it.m_obj->getNamedTransformNameByIndex(std::get<0>(it.m_args), i);
+            })
+        .def("__iter__", [](NamedTransformNameIterator & it) -> NamedTransformNameIterator &
+            {
+                return it;
+            })
+        .def("__next__", [](NamedTransformNameIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumNamedTransforms(std::get<0>(it.m_args)));
+                return it.m_obj->getNamedTransformNameByIndex(std::get<0>(it.m_args), i);
+            });
+
+    clsNamedTransformIterator
+        .def("__len__", [](NamedTransformIterator & it)
+            {
+                return it.m_obj->getNumNamedTransforms(std::get<0>(it.m_args));
+            })
+        .def("__getitem__", [](NamedTransformIterator & it, int i)
+            {
+                it.checkIndex(i, it.m_obj->getNumNamedTransforms(std::get<0>(it.m_args)));
+                const char * name = it.m_obj->getNamedTransformNameByIndex(std::get<0>(it.m_args), i);
+                return it.m_obj->getNamedTransform(name);
+            })
+        .def("__iter__", [](NamedTransformIterator & it) -> NamedTransformIterator &
+            {
+                return it;
+            })
+        .def("__next__", [](NamedTransformIterator & it)
+            {
+                int i = it.nextIndex(it.m_obj->getNumNamedTransforms(std::get<0>(it.m_args)));
+                const char * name = it.m_obj->getNamedTransformNameByIndex(std::get<0>(it.m_args), i);
+                return it.m_obj->getNamedTransform(name);
+            });
+
+    clsActiveNamedTransformNameIterator
+        .def("__len__", [](ActiveNamedTransformNameIterator & it)
+            {
+                return it.m_obj->getNumNamedTransforms();
+            })
+        .def("__getitem__", [](ActiveNamedTransformNameIterator & it, int i)
+            {
+                it.checkIndex(i, (int)it.m_obj->getNumNamedTransforms());
+                return it.m_obj->getNamedTransformNameByIndex(i);
+            })
+        .def("__iter__", [](ActiveNamedTransformNameIterator & it) -> ActiveNamedTransformNameIterator &
+            {
+                return it;
+            })
+        .def("__next__", [](ActiveNamedTransformNameIterator & it)
+            {
+                int i = it.nextIndex((int)it.m_obj->getNumNamedTransforms());
+                return it.m_obj->getNamedTransformNameByIndex(i);
+            });
+
+    clsActiveNamedTransformIterator
+        .def("__len__", [](ActiveNamedTransformIterator & it)
+            {
+                return it.m_obj->getNumNamedTransforms();
+            })
+        .def("__getitem__", [](ActiveNamedTransformIterator & it, int i)
+            {
+                it.checkIndex(i, (int)it.m_obj->getNumNamedTransforms());
+                const char * name = it.m_obj->getNamedTransformNameByIndex(i);
+                return it.m_obj->getNamedTransform(name);
+            })
+        .def("__iter__", [](ActiveNamedTransformIterator & it) -> ActiveNamedTransformIterator &
+            {
+                return it;
+            })
+        .def("__next__", [](ActiveNamedTransformIterator & it)
+            {
+                int i = it.nextIndex((int)it.m_obj->getNumNamedTransforms());
+                const char * name = it.m_obj->getNamedTransformNameByIndex(i);
+                return it.m_obj->getNamedTransform(name);
+            });
+
+    m.def("GetCurrentConfig", &GetCurrentConfig, 
+          DOC(PyOpenColorIO, GetCurrentConfig));
+    m.def("SetCurrentConfig", &SetCurrentConfig, "config"_a, 
+          DOC(PyOpenColorIO, SetCurrentConfig));
 }
-OCIO_NAMESPACE_EXIT
+
+} // namespace OCIO_NAMESPACE

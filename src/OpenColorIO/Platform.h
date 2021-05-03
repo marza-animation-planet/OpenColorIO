@@ -1,94 +1,37 @@
-/*
-Copyright (c) 2003-2010 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
 
 #ifndef INCLUDED_OCIO_PLATFORM_H
 #define INCLUDED_OCIO_PLATFORM_H
 
-// platform-specific includes
-#if defined(_WIN32) || defined(_WIN64) || defined(_WINDOWS) || defined(_MSC_VER)
-#ifndef WINDOWS
-#define WINDOWS
-#endif
+// Platform-specific includes.
 
-#define _CRT_NONSTDC_NO_DEPRECATE 1
-#define _CRT_SECURE_NO_DEPRECATE 1
+#if defined(_WIN32)
+
 #define NOMINMAX 1
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-// windows - defined for both Win32 and Win64
+
 #include <windows.h>
 
-#include <malloc.h>
-#include <io.h>
-#include <tchar.h> 
-#include <process.h>
+#endif // _WIN32
 
-#else
-// assume linux/unix/posix
 
-#include <stdlib.h>
-#if !defined(__FreeBSD__)
-#include <alloca.h>
-#endif
-#include <string.h>
-#include <pthread.h>
+#include <string>
 
-#endif // defined(_WIN32) || defined(_WIN64) || defined(_WINDOWS) || defined(_MSC_VER)
 
-// general includes
-#include <stdio.h>
-#include <math.h>
-#include <assert.h>
+// Missing functions on Windows.
+#ifdef _WIN32
 
-// missing functions on Windows
-#ifdef WINDOWS
-#define snprintf sprintf_s
-#define strtok_r strtok_s
 #define sscanf sscanf_s
-#define putenv _putenv
-typedef __int64 FilePos;
-#define fseeko _fseeki64
-#define ftello _ftelli64
 
-inline double log2(double x)
-{
-    return log(x) * 1.4426950408889634; 
-}
+#endif // _WIN32
 
-#else
-typedef off_t FilePos;
-#endif // WINDOWS
-    
 
-OCIO_NAMESPACE_ENTER
+namespace OCIO_NAMESPACE
 {
 
 // TODO: Add proper endian detection using architecture / compiler mojo
@@ -98,13 +41,23 @@ OCIO_NAMESPACE_ENTER
 namespace Platform
 {
 
-void Getenv (const char* name, std::string& value);
+// Return true if the environment variable exists.
+bool Getenv(const char * name, std::string & value);
+
+// Set a new value to a new or existing environment variable.
+void Setenv(const char * name, const std::string & value);
+
+// Remove the environment variable.
+void Unsetenv(const char * name);
+
+// Only test the presence of the envvar i.e the value does not matter.
+bool isEnvPresent(const char * name);
 
 // Case insensitive string comparison
-int Strcasecmp(const char* str1, const char* str2);
+int Strcasecmp(const char * str1, const char * str2);
 
 // Case insensitive string comparison for the nth first characters only
-int Strncasecmp(const char* str1, const char* str2, size_t n);
+int Strncasecmp(const char * str1, const char * str2, size_t n);
 
 // Allocates memory on a specified alignment boundary. Must use
 // AlignedFree to free the memory block.
@@ -112,11 +65,16 @@ int Strncasecmp(const char* str1, const char* str2, size_t n);
 void* AlignedMalloc(size_t size, size_t alignment);
 
 // Frees a block of memory that was allocated with AlignedMalloc.
-void AlignedFree(void* memBlock);
+void AlignedFree(void * memBlock);
+
+// Create a temporary filename where filenameExt could be empty.
+// Note: Temporary files should be at some point deleted by the OS (depending of the OS
+//       and various platform specific settings). To be safe, add some code to remove
+//       the file if created.
+std::string CreateTempFilename(const std::string & filenameExt);
 
 }
 
-}
-OCIO_NAMESPACE_EXIT
+} // namespace OCIO_NAMESPACE
 
 #endif // INCLUDED_OCIO_PLATFORM_H

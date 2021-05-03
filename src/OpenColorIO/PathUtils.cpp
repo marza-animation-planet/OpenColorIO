@@ -1,282 +1,237 @@
-/*
-Copyright (c) 2003-2010 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
-#include <cstdlib>
-#include <fstream>
+
 #include <iostream>
-#include <limits>
-#include <sstream>
+#include <map>
 #include <sys/stat.h>
-#include <errno.h>
 
 #include <OpenColorIO/OpenColorIO.h>
 
 #include "Mutex.h"
 #include "PathUtils.h"
-#include "Platform.h"
 #include "pystring/pystring.h"
+#include "utils/StringUtils.h"
 
-#if !defined(WINDOWS)
+#if !defined(_WIN32)
 #include <sys/param.h>
+#include <unistd.h>
 #else
 #include <direct.h>
 #define MAXPATHLEN 4096
 #endif
 
-#if defined(__APPLE__) && !defined(__IPHONE__)
-#include <crt_externs.h> // _NSGetEnviron()
-#include <unistd.h>
-#elif !defined(WINDOWS)
-#include <unistd.h>
-extern char **environ;
-#endif
 
-OCIO_NAMESPACE_ENTER
+namespace OCIO_NAMESPACE
 {
-    namespace
+namespace
+{
+// Here is the explanation of the stat() method:
+// https://pubs.opengroup.org/onlinepubs/009695299/basedefs/sys/stat.h.html
+// "The st_ino and st_dev fields taken together uniquely identify the file within the system."
+//
+// However there are limitations to the stat() support on some Windows file systems:
+// https://docs.microsoft.com/en-us/cpp/c-runtime-library/reference/stat-functions?redirectedfrom=MSDN&view=vs-2019
+// "The inode, and therefore st_ino, has no meaning in the FAT, HPFS, or NTFS file systems."
+
+// That's the default hash method implementation to compute a hash key based on a file content.
+std::string DefaultComputeHash(const std::string &filename)
+{
+    struct stat fileInfo;
+    if (stat(filename.c_str(), &fileInfo) == 0)
     {
-        std::string ComputeHash(const std::string & filename)
-        {
-            struct stat results;
-            if (stat(filename.c_str(), &results) == 0)
-            {
-                // Treat the mtime + inode as a proxy for the contents
-                std::ostringstream fasthash;
-                fasthash << results.st_ino << ":";
-                fasthash << results.st_mtime;
-                return fasthash.str();
-            }
-            
-            return "";
-        }
-        
-        // We mutex both the main map and each item individually, so that
-        // the potentially slow stat calls dont block other lookups to already
-        // existing items. (The stat calls will block other lookups on the
-        // *same* file though).
-        
-        struct FileHashResult
-        {
-            Mutex mutex;
-            std::string hash;
-            bool ready;
-            
-            FileHashResult():
-                ready(false)
-            {}
-        };
-        
-        typedef OCIO_SHARED_PTR<FileHashResult> FileHashResultPtr;
-        typedef std::map<std::string, FileHashResultPtr> FileCacheMap;
-        
-        FileCacheMap g_fastFileHashCache;
-        Mutex g_fastFileHashCache_mutex;
+        // Treat the st_dev (i.e. device) + st_ino (i.e. inode) as a proxy for the contents.
+
+        std::ostringstream fasthash;
+        fasthash << fileInfo.st_dev << ":";
+#ifdef _WIN32
+        // TODO: The hard-linked files are then not correctly supported on Windows platforms.
+        fasthash << std::hash<std::string>{}(filename);
+#else
+        fasthash << fileInfo.st_ino;
+#endif
+        return fasthash.str();
     }
-    
-    std::string GetFastFileHash(const std::string & filename)
-    {
-        FileHashResultPtr fileHashResultPtr;
-        {
-            AutoMutex lock(g_fastFileHashCache_mutex);
-            FileCacheMap::iterator iter = g_fastFileHashCache.find(filename);
-            if(iter != g_fastFileHashCache.end())
-            {
-                fileHashResultPtr = iter->second;
-            }
-            else
-            {
-                fileHashResultPtr = FileHashResultPtr(new FileHashResult);
-                g_fastFileHashCache[filename] = fileHashResultPtr;
-            }
-        }
-        
-        std::string hash;
-        {
-            AutoMutex lock(fileHashResultPtr->mutex);
-            if(!fileHashResultPtr->ready)
-            {
-                fileHashResultPtr->ready = true;
-                fileHashResultPtr->hash = ComputeHash(filename);
-            }
-            
-            hash = fileHashResultPtr->hash;
-        }
-        
-        return hash;
-    }
-    
-    bool FileExists(const std::string & filename)
-    {
-        std::string hash = GetFastFileHash(filename);
-        return (!hash.empty());
-    }
-    
-    void ClearPathCaches()
+
+    return "";
+}
+
+// The global variable holds the hash function to use.
+// It could be changed using SetComputeHashFunction() to customize the implementation.
+ComputeHashFunction g_hashFunction = DefaultComputeHash;
+
+// We mutex both the main map and each item individually, so that
+// the potentially slow stat calls dont block other lookups to already
+// existing items. (The stat calls will block other lookups on the
+// *same* file though).
+
+struct FileHashResult
+{
+    Mutex mutex;
+    std::string hash;
+    bool ready { false };
+};
+
+typedef OCIO_SHARED_PTR<FileHashResult> FileHashResultPtr;
+typedef std::map<std::string, FileHashResultPtr> FileCacheMap;
+
+FileCacheMap g_fastFileHashCache;
+Mutex g_fastFileHashCache_mutex;
+}
+
+void SetComputeHashFunction(ComputeHashFunction hashFunction)
+{
+    g_hashFunction = hashFunction;
+}
+
+void ResetComputeHashFunction()
+{
+    g_hashFunction = DefaultComputeHash;
+}
+
+std::string GetFastFileHash(const std::string & filename)
+{
+    FileHashResultPtr fileHashResultPtr;
     {
         AutoMutex lock(g_fastFileHashCache_mutex);
-        g_fastFileHashCache.clear();
-    }
-    
-    namespace pystring
-    {
-    namespace os
-    {
-        std::string getcwd()
+        FileCacheMap::iterator iter = g_fastFileHashCache.find(filename);
+        if(iter != g_fastFileHashCache.end())
         {
-#ifdef WINDOWS
-            char path[MAXPATHLEN];
-            _getcwd(path, MAXPATHLEN);
-            return path;
-#else
-            std::vector<char> current_dir;
-#ifdef PATH_MAX
-            current_dir.resize(PATH_MAX);
-#else
-            current_dir.resize(1024);
-#endif
-            while (::getcwd(&current_dir[0], current_dir.size()) == NULL && errno == ERANGE) {
-                current_dir.resize(current_dir.size() + 1024);
-            }
+            fileHashResultPtr = iter->second;
+        }
+        else
+        {
+            fileHashResultPtr = std::make_shared<FileHashResult>();
+            g_fastFileHashCache[filename] = fileHashResultPtr;
+        }
+    }
 
-            return std::string(&current_dir[0]);
-#endif
-        }
-        
-    namespace path
+    std::string hash;
     {
-        std::string abspath(const std::string & path)
+        AutoMutex lock(fileHashResultPtr->mutex);
+        if(!fileHashResultPtr->ready)
         {
-            std::string p = path;
-            if(!isabs(p)) p = join(getcwd(), p);
-            return normpath(p);
+            // NB: OCIO does not attempt to detect if files have changed and caused the cache to
+            // become stale.
+            fileHashResultPtr->ready = true;
+            fileHashResultPtr->hash = g_hashFunction(filename);
         }
-    } // namespace path
-    } // namespace os
+
+        hash = fileHashResultPtr->hash;
     }
-    
-    namespace
-    {
-        inline char** GetEnviron()
-        {
-#if __IPHONE__
-            // TODO: fix this
-            return NULL;
-#elif __APPLE__
-            return (*_NSGetEnviron());
-#else
-            return environ;
-#endif
-        }
-        
-        const int MAX_PATH_LENGTH = 4096;
-    }
-    
-    void LoadEnvironment(EnvMap & map, bool update)
-    {
-        for (char **env = GetEnviron(); *env != NULL; ++env)
-        {
-            
-            // split environment up into std::map[name] = value
-            std::string env_str = (char*)*env;
-            int pos = static_cast<int>(env_str.find_first_of('='));
-            std::string name = env_str.substr(0, pos);
-            std::string value = env_str.substr(pos+1, env_str.length());
-            
-            if(update)
-            {
-                // update existing key:values that match
-                EnvMap::iterator iter = map.find(name);
-                if(iter != map.end()) iter->second = value;
-            }
-            else
-            {
-                map.insert(EnvMap::value_type(name, value));
-            }
-        }
-    }
-    
-    std::string EnvExpand(const std::string & str, const EnvMap & map)
-    {
-        // Early exit if no magic characters are found.
-        if(pystring::find(str, "$") == -1 && 
-           pystring::find(str, "%") == -1) return str;
-        
-        std::string orig = str;
-        std::string newstr = str;
-        
-        // This walks through the envmap in key order,
-        // from longest to shortest to handle envvars which are
-        // substrings.
-        // ie. '$TEST_$TESTING_$TE' will expand in this order '2 1 3'
-        
-        for (EnvMap::const_iterator iter = map.begin();
-             iter != map.end(); ++iter)
-        {
-            newstr = pystring::replace(newstr,
-                ("${"+iter->first+"}"), iter->second);
-            newstr = pystring::replace(newstr,
-                ("$"+iter->first), iter->second);
-            newstr = pystring::replace(newstr,
-                ("%"+iter->first+"%"), iter->second);
-        }
-        
-        // recursively call till string doesn't expand anymore
-        if(newstr != orig)
-        {
-            return EnvExpand(newstr, map);
-        }
-        
-        return orig;
-    }
+
+    return hash;
 }
-OCIO_NAMESPACE_EXIT
 
-///////////////////////////////////////////////////////////////////////////////
-
-#ifdef OCIO_UNIT_TEST
-
-namespace OCIO = OCIO_NAMESPACE;
-#include "unittest.h"
-
-OIIO_ADD_TEST(PathUtils, EnvExpand)
+bool FileExists(const std::string & filename)
 {
-    // build env by hand for unit test
-    OCIO::EnvMap env_map; // = OCIO::GetEnvMap();
-   
-    // add some fake env vars so the test runs
-    env_map.insert(OCIO::EnvMap::value_type("TEST1", "foo.bar"));
-    env_map.insert(OCIO::EnvMap::value_type("TEST1NG", "bar.foo"));
-    env_map.insert(OCIO::EnvMap::value_type("FOO_foo.bar", "cheese"));
-   
-    //
-    std::string foo = "/a/b/${TEST1}/${TEST1NG}/$TEST1/$TEST1NG/${FOO_${TEST1}}/";
-    std::string foo_result = "/a/b/foo.bar/bar.foo/foo.bar/bar.foo/cheese/";
-    std::string testresult = OCIO::EnvExpand(foo, env_map);
-    OIIO_CHECK_ASSERT( testresult == foo_result );
+    std::string hash = GetFastFileHash(filename);
+    return (!hash.empty());
 }
 
-#endif // OCIO_BUILD_TESTS
+void ClearPathCaches()
+{
+    AutoMutex lock(g_fastFileHashCache_mutex);
+    g_fastFileHashCache.clear();
+}
+
+namespace
+{
+std::string GetCwd()
+{
+#ifdef _WIN32
+    char path[MAXPATHLEN];
+    _getcwd(path, MAXPATHLEN);
+    return path;
+#else
+    std::vector<char> current_dir;
+#ifdef PATH_MAX
+    current_dir.resize(PATH_MAX);
+#else
+    current_dir.resize(1024);
+#endif
+    while (::getcwd(&current_dir[0], current_dir.size()) == NULL && errno == ERANGE) {
+        current_dir.resize(current_dir.size() + 1024);
+    }
+
+    return std::string(&current_dir[0]);
+#endif
+}
+}
+
+std::string AbsPath(const std::string & path)
+{
+    std::string p = path;
+    if(!pystring::os::path::isabs(p)) p = pystring::os::path::join(GetCwd(), p);
+    return pystring::os::path::normpath(p);
+}
+
+namespace
+{
+void AdjustRightmost(const std::string & name, int index, int & colorspacePos,
+                     int & rightMostColorPos, std::string & rightMostColorspace,
+                     int & rightMostColorSpaceIndex)
+{
+    // If we have found a match, move the pointer over to the right end
+    // of the substring.  This will allow us to find the longest name
+    // that matches the rightmost colorspace
+    colorspacePos += (int)name.size();
+
+    if ((colorspacePos > rightMostColorPos) ||
+        ((colorspacePos == rightMostColorPos) && (name.size() > rightMostColorspace.size()))
+        )
+    {
+        rightMostColorPos = colorspacePos;
+        rightMostColorspace = name;
+        rightMostColorSpaceIndex = index;
+    }
+}
+}
+
+int ParseColorSpaceFromString(const Config & config, const char * str)
+{
+    if (!str) return -1;
+
+    // Search the entire filePath, including directory name (if provided)
+    // convert the filename to lowercase.
+    const std::string fullstr = StringUtils::Lower(std::string(str));
+
+    // See if it matches a LUT name.
+    // This is the position of the RIGHT end of the colorspace substring,
+    // not the left
+    int rightMostColorPos = -1;
+    std::string rightMostColorspace = "";
+    int rightMostColorSpaceIndex = -1;
+
+    // Find the right-most occcurance within the string for each colorspace.
+    for (int i = 0; i < config.getNumColorSpaces(SEARCH_REFERENCE_SPACE_ALL, COLORSPACE_ALL); ++i)
+    {
+        const std::string csname = StringUtils::Lower(
+            config.getColorSpaceNameByIndex(SEARCH_REFERENCE_SPACE_ALL, COLORSPACE_ALL, i));
+
+        // find right-most extension matched in filename
+        int colorspacePos = (int)StringUtils::ReverseFind(fullstr, csname);
+        if (colorspacePos >= 0)
+        {
+            AdjustRightmost(csname, i, colorspacePos,
+                            rightMostColorPos, rightMostColorspace, rightMostColorSpaceIndex);
+        }
+
+        auto cs = config.getColorSpace(csname.c_str());
+        const size_t numAliases = cs->getNumAliases();
+        for (size_t j = 0; j < numAliases; ++j)
+        {
+            const std::string aliasname = StringUtils::Lower(cs->getAlias(j));
+            int colorspacePos = (int)StringUtils::ReverseFind(fullstr, aliasname);
+            if (colorspacePos >= 0)
+            {
+                AdjustRightmost(aliasname, i, colorspacePos,
+                                rightMostColorPos, rightMostColorspace, rightMostColorSpaceIndex);
+            }
+        }
+    }
+    return rightMostColorSpaceIndex;
+}
+
+} // namespace OCIO_NAMESPACE
+

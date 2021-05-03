@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright Contributors to the OpenColorIO Project.
+
 """Various utilities relating to the OCIOCDLTransform node
 """
 
@@ -113,7 +116,7 @@ def _cdltransforms_to_xml(allcc):
 def SelectCCCIDPanel(*args, **kwargs):
     # Wrap class definition in a function, so nukescripts.PythonPanel
     # is only accessed when ``SelectCCCIDPanel()`` is called,
-    # https://github.com/imageworks/OpenColorIO/issues/277
+    # https://github.com/AcademySoftwareFoundation/OpenColorIO/issues/277
 
     import nukescripts
 

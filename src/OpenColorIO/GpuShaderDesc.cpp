@@ -1,162 +1,351 @@
-/*
-Copyright (c) 2003-2010 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
 #include <sstream>
 
 #include <OpenColorIO/OpenColorIO.h>
 
+#include "DynamicProperty.h"
 #include "GpuShader.h"
+#include "HashUtils.h"
+#include "Logging.h"
 #include "Mutex.h"
+#include "utils/StringUtils.h"
 
-OCIO_NAMESPACE_ENTER
+
+namespace OCIO_NAMESPACE
 {
-    class GpuShaderDesc::Impl
+
+class GpuShaderCreator::Impl
+{
+public:
+    std::string m_uid; // Custom uid if needed.
+    GpuLanguage m_language = GPU_LANGUAGE_GLSL_1_2;
+    std::string m_functionName;
+    std::string m_resourcePrefix;
+    std::string m_pixelName;
+    unsigned m_numResources = 0;
+
+    mutable std::string m_cacheID;
+    mutable Mutex m_cacheIDMutex;
+
+    std::string m_declarations;
+    std::string m_helperMethods;
+    std::string m_functionHeader;
+    std::string m_functionBody;
+    std::string m_functionFooter;
+
+    std::string m_shaderCode;
+    std::string m_shaderCodeID;
+
+    std::vector<DynamicPropertyRcPtr> m_dynamicProperties;
+
+    Impl()
+        :   m_functionName("OCIOMain")
+        ,   m_resourcePrefix("ocio")
+        ,   m_pixelName("outColor")
     {
-    public:
-        GpuLanguage language_;
-        std::string functionName_;
-        std::string resourcePrefix_;
-        std::string pixelName_;
-        
-        mutable std::string cacheID_;
-        mutable Mutex cacheIDMutex_;
-        
-        Impl()
-            :   language_(GPU_LANGUAGE_UNKNOWN)
-            ,   functionName_("OCIOMain")
-            ,   resourcePrefix_("ocio")
-            ,   pixelName_("outColor")
+    }
+
+    ~Impl()
+    { }
+
+    Impl(const Impl & rhs) = delete;
+
+    Impl& operator= (const Impl & rhs)
+    {
+        if (this != &rhs)
         {
+            m_uid            = rhs.m_uid;
+            m_language       = rhs.m_language;
+            m_functionName   = rhs.m_functionName;
+            m_resourcePrefix = rhs.m_resourcePrefix;
+            m_pixelName      = rhs.m_pixelName;
+            m_numResources   = rhs.m_numResources;
+            m_cacheID        = rhs.m_cacheID;
+
+            m_declarations   = rhs.m_declarations;
+            m_helperMethods  = rhs.m_helperMethods;
+            m_functionHeader = rhs.m_functionHeader;
+            m_functionBody   = rhs.m_functionBody;
+            m_functionFooter = rhs.m_functionFooter;
+
+            m_shaderCode.clear();
+            m_shaderCodeID.clear();
         }
-        
-        ~Impl()
-        { }
-        
-        Impl& operator= (const Impl & rhs)
+        return *this;
+    }
+};
+
+GpuShaderCreator::GpuShaderCreator()
+    :   m_impl(new GpuShaderDesc::Impl)
+{
+}
+
+GpuShaderCreator::~GpuShaderCreator()
+{
+    delete m_impl;
+    m_impl = nullptr;
+}
+
+void GpuShaderCreator::setUniqueID(const char * uid) noexcept
+{
+    AutoMutex lock(getImpl()->m_cacheIDMutex);
+    getImpl()->m_uid = uid ? uid : "";
+    getImpl()->m_cacheID.clear();
+}
+
+const char * GpuShaderCreator::getUniqueID() const noexcept
+{
+    return getImpl()->m_uid.c_str();
+}
+
+void GpuShaderCreator::setLanguage(GpuLanguage lang) noexcept
+{
+    AutoMutex lock(getImpl()->m_cacheIDMutex);
+    getImpl()->m_language = lang;
+    getImpl()->m_cacheID.clear();
+}
+
+GpuLanguage GpuShaderCreator::getLanguage() const noexcept
+{
+    return getImpl()->m_language;
+}
+
+void GpuShaderCreator::setFunctionName(const char * name) noexcept
+{
+    AutoMutex lock(getImpl()->m_cacheIDMutex);
+    // Note: Remove potentially problematic double underscores from GLSL resource names.
+    getImpl()->m_functionName = StringUtils::Replace(name, "__", "_");
+    getImpl()->m_cacheID.clear();
+}
+
+const char * GpuShaderCreator::getFunctionName() const noexcept
+{
+    return getImpl()->m_functionName.c_str();
+}
+
+void GpuShaderCreator::setResourcePrefix(const char * prefix) noexcept
+{
+    AutoMutex lock(getImpl()->m_cacheIDMutex);
+    // Note: Remove potentially problematic double underscores from GLSL resource names.
+    getImpl()->m_resourcePrefix = StringUtils::Replace(prefix, "__", "_");
+    getImpl()->m_cacheID.clear();
+}
+
+const char * GpuShaderCreator::getResourcePrefix() const noexcept
+{
+    return getImpl()->m_resourcePrefix.c_str();
+}
+
+void GpuShaderCreator::setPixelName(const char * name) noexcept
+{
+    AutoMutex lock(getImpl()->m_cacheIDMutex);
+    // Note: Remove potentially problematic double underscores from GLSL resource names.
+    getImpl()->m_pixelName = StringUtils::Replace(name, "__", "_");
+    getImpl()->m_cacheID.clear();
+}
+
+const char * GpuShaderCreator::getPixelName() const noexcept
+{
+    return getImpl()->m_pixelName.c_str();
+}
+
+unsigned GpuShaderCreator::getNextResourceIndex() noexcept
+{
+    return getImpl()->m_numResources++;
+}
+
+bool GpuShaderCreator::hasDynamicProperty(DynamicPropertyType type) const
+{
+    for (auto dp : getImpl()->m_dynamicProperties)
+    {
+        if (dp->getType() == type)
         {
-            if (this != &rhs)
-            {
-                language_ = rhs.language_;
-                functionName_ = rhs.functionName_;
-                resourcePrefix_ = rhs.resourcePrefix_;
-                pixelName_ = rhs.pixelName_;
-                cacheID_ = rhs.cacheID_;
-            }
-            return *this;
+            // Dynamic property is already there.
+            return true;
         }
-    };
-    
+    }
+    return false;
+}
 
-    GpuShaderDescRcPtr GpuShaderDesc::CreateLegacyShaderDesc(unsigned edgelen)
+void GpuShaderCreator::addDynamicProperty(DynamicPropertyRcPtr & prop)
+{
+    for (auto dp : getImpl()->m_dynamicProperties)
     {
-        return LegacyGpuShaderDesc::Create(edgelen);
-    }
-
-    GpuShaderDescRcPtr GpuShaderDesc::CreateShaderDesc()
-    {
-        return GenericGpuShaderDesc::Create();
-    }
-
-    GpuShaderDesc::GpuShaderDesc()
-        :   m_impl(new GpuShaderDesc::Impl)
-    {
-    }
-    
-    GpuShaderDesc::~GpuShaderDesc()
-    {
-        delete m_impl;
-        m_impl = NULL;
-    }
-    
-    
-    void GpuShaderDesc::setLanguage(GpuLanguage lang)
-    {
-        AutoMutex lock(getImpl()->cacheIDMutex_);
-        getImpl()->language_ = lang;
-        getImpl()->cacheID_ = "";
-    }
-    
-    GpuLanguage GpuShaderDesc::getLanguage() const
-    {
-        return getImpl()->language_;
-    }
-    
-    void GpuShaderDesc::setFunctionName(const char * name)
-    {
-        AutoMutex lock(getImpl()->cacheIDMutex_);
-        getImpl()->functionName_ = name;
-        getImpl()->cacheID_ = "";
-    }
-    
-    const char * GpuShaderDesc::getFunctionName() const
-    {
-        return getImpl()->functionName_.c_str();
-    }
-    
-    void GpuShaderDesc::setResourcePrefix(const char * prefix)
-    {
-        AutoMutex lock(getImpl()->cacheIDMutex_);
-        getImpl()->resourcePrefix_ = prefix;
-        getImpl()->cacheID_    = "";
-    }
-
-    const char * GpuShaderDesc::getResourcePrefix() const
-    {
-        return getImpl()->resourcePrefix_.c_str();
-    }
-
-    void GpuShaderDesc::setPixelName(const char * name)
-    {
-        AutoMutex lock(getImpl()->cacheIDMutex_);
-        getImpl()->pixelName_ = name;
-        getImpl()->cacheID_   = "";
-    }
-
-    const char * GpuShaderDesc::getPixelName() const
-    {
-        return getImpl()->pixelName_.c_str();
-    }
-
-    const char * GpuShaderDesc::getCacheID() const
-    {
-        AutoMutex lock(getImpl()->cacheIDMutex_);
-        
-        if(getImpl()->cacheID_.empty())
+        if (dp->getType() == prop->getType())
         {
-            std::ostringstream os;
-            os << GpuLanguageToString(getImpl()->language_) << " ";
-            os << getImpl()->functionName_ << " ";
-            os << getImpl()->resourcePrefix_ << " ";
-            os << getImpl()->pixelName_ << " ";
-            getImpl()->cacheID_ = os.str();
+            // Dynamic property is already there.
+            throw Exception("Dynamic property already here.");
         }
-        
-        return getImpl()->cacheID_.c_str();
+    }
+
+    getImpl()->m_dynamicProperties.push_back(prop);
+}
+
+unsigned GpuShaderCreator::getNumDynamicProperties() const noexcept
+{
+    return (unsigned)getImpl()->m_dynamicProperties.size();
+}
+
+DynamicPropertyRcPtr GpuShaderCreator::getDynamicProperty(unsigned index) const
+{
+    if (index >= (unsigned)getImpl()->m_dynamicProperties.size())
+    {
+        std::ostringstream oss;
+        oss << "Dynamic properties access error: index = " << index
+            << " where size = " << getImpl()->m_dynamicProperties.size();
+        throw Exception(oss.str().c_str());
+    }
+    return getImpl()->m_dynamicProperties[index];
+}
+
+DynamicPropertyRcPtr GpuShaderCreator::getDynamicProperty(DynamicPropertyType type) const
+{
+    for (auto dp : getImpl()->m_dynamicProperties)
+    {
+        if (dp->getType() == type)
+        {
+            return dp;
+        }
+    }
+    throw Exception("Dynamic property not found.");
+}
+
+void GpuShaderCreator::begin(const char *)
+{
+}
+
+void GpuShaderCreator::end()
+{
+}
+
+const char * GpuShaderCreator::getCacheID() const noexcept
+{
+    AutoMutex lock(getImpl()->m_cacheIDMutex);
+
+    if(getImpl()->m_cacheID.empty())
+    {
+        std::ostringstream os;
+        os << GpuLanguageToString(getImpl()->m_language) << " ";
+        os << getImpl()->m_functionName << " ";
+        os << getImpl()->m_resourcePrefix << " ";
+        os << getImpl()->m_pixelName << " ";
+        os << getImpl()->m_numResources << " ";
+        os << getImpl()->m_shaderCodeID;
+        getImpl()->m_cacheID = os.str();
+    }
+
+    return getImpl()->m_cacheID.c_str();
+}
+
+void GpuShaderCreator::addToDeclareShaderCode(const char * shaderCode)
+{
+    if(getImpl()->m_declarations.empty())
+    {
+        getImpl()->m_declarations += "\n// Declaration of all variables\n\n";
+    }
+    getImpl()->m_declarations += (shaderCode && *shaderCode) ? shaderCode : "";
+}
+
+void GpuShaderCreator::addToHelperShaderCode(const char * shaderCode)
+{
+    if(getImpl()->m_helperMethods.empty())
+    {
+        getImpl()->m_helperMethods += "\n// Declaration of all helper methods\n\n";
+    }
+    getImpl()->m_helperMethods += (shaderCode && *shaderCode) ? shaderCode : "";
+}
+
+void GpuShaderCreator::addToFunctionShaderCode(const char * shaderCode)
+{
+    getImpl()->m_functionBody += (shaderCode && *shaderCode) ? shaderCode : "";
+}
+
+void GpuShaderCreator::addToFunctionHeaderShaderCode(const char * shaderCode)
+{
+    getImpl()->m_functionHeader += (shaderCode && *shaderCode) ? shaderCode : "";
+}
+
+void GpuShaderCreator::addToFunctionFooterShaderCode(const char * shaderCode)
+{
+    getImpl()->m_functionFooter += (shaderCode && *shaderCode) ? shaderCode : "";
+}
+
+void GpuShaderCreator::createShaderText(const char * shaderDeclarations,
+                                        const char * shaderHelperMethods,
+                                        const char * shaderFunctionHeader,
+                                        const char * shaderFunctionBody,
+                                        const char * shaderFunctionFooter)
+{
+    AutoMutex lock(getImpl()->m_cacheIDMutex);
+
+    getImpl()->m_shaderCode.clear();
+    getImpl()->m_shaderCode += (shaderDeclarations   && *shaderDeclarations)   ? shaderDeclarations   : "";
+    getImpl()->m_shaderCode += (shaderHelperMethods  && *shaderHelperMethods)  ? shaderHelperMethods  : "";
+    getImpl()->m_shaderCode += (shaderFunctionHeader && *shaderFunctionHeader) ? shaderFunctionHeader : "";
+    getImpl()->m_shaderCode += (shaderFunctionBody   && *shaderFunctionBody)   ? shaderFunctionBody   : "";
+    getImpl()->m_shaderCode += (shaderFunctionFooter && *shaderFunctionFooter) ? shaderFunctionFooter : "";
+
+    getImpl()->m_shaderCodeID = CacheIDHash(getImpl()->m_shaderCode.c_str(),
+                                            unsigned(getImpl()->m_shaderCode.length()));
+
+    getImpl()->m_cacheID.clear();
+}
+
+void GpuShaderCreator::finalize()
+{
+    createShaderText(getImpl()->m_declarations.c_str(),
+                     getImpl()->m_helperMethods.c_str(),
+                     getImpl()->m_functionHeader.c_str(),
+                     getImpl()->m_functionBody.c_str(),
+                     getImpl()->m_functionFooter.c_str());
+
+
+    if(IsDebugLoggingEnabled())
+    {
+        std::ostringstream oss;
+        oss << std::endl
+            << "**" << std::endl
+            << "GPU Fragment Shader program" << std::endl
+            << getImpl()->m_shaderCode << std::endl;
+
+        LogDebug(oss.str());
     }
 }
-OCIO_NAMESPACE_EXIT
+
+
+
+GpuShaderDescRcPtr GpuShaderDesc::CreateLegacyShaderDesc(unsigned edgelen)
+{
+    return LegacyGpuShaderDesc::Create(edgelen);
+}
+
+GpuShaderDescRcPtr GpuShaderDesc::CreateShaderDesc()
+{
+    return GenericGpuShaderDesc::Create();
+}
+
+GpuShaderDesc::GpuShaderDesc()
+    :   GpuShaderCreator()
+{
+}
+
+GpuShaderDesc::~GpuShaderDesc()
+{
+}
+
+GpuShaderCreatorRcPtr GpuShaderDesc::clone() const
+{
+    GpuShaderDescRcPtr gpuDesc = CreateShaderDesc();
+    *(gpuDesc->getImpl()) = *getImpl();
+
+    return DynamicPtrCast<GpuShaderCreator>(gpuDesc);
+}
+
+const char * GpuShaderDesc::getShaderText() const noexcept
+{
+    return getImpl()->m_shaderCode.c_str();
+}
+
+} // namespace OCIO_NAMESPACE

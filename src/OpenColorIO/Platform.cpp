@@ -1,78 +1,121 @@
-/*
-Copyright (c) 2003-2010 Sony Pictures Imageworks Inc., et al.
-All Rights Reserved.
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright Contributors to the OpenColorIO Project.
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-* Redistributions of source code must retain the above copyright
-  notice, this list of conditions and the following disclaimer.
-* Redistributions in binary form must reproduce the above copyright
-  notice, this list of conditions and the following disclaimer in the
-  documentation and/or other materials provided with the distribution.
-* Neither the name of Sony Pictures Imageworks nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
-
+#include <random>
+#include <sstream>
+#include <vector>
 
 #include <OpenColorIO/OpenColorIO.h>
 
 #include "Platform.h"
 
-OCIO_NAMESPACE_ENTER
+#ifndef _WIN32
+#include <strings.h>
+#endif
+
+
+namespace OCIO_NAMESPACE
 {
+
+const char * GetEnvVariable(const char * name)
+{
+    static std::string value;
+    Platform::Getenv(name, value);
+    return value.c_str();
+}
+
+void SetEnvVariable(const char * name, const char * value)
+{
+    Platform::Setenv(name, value ? value : "");
+}
+
+void UnsetEnvVariable(const char * name)
+{
+    Platform::Unsetenv(name);
+}
+
+bool IsEnvVariablePresent(const char * name)
+{
+    return Platform::isEnvPresent(name);
+}
 
 namespace Platform
 {
-// Unlike the ::getenv(), the method does not use any static buffer 
-// for the Windows platform only. *nix platforms are still using
-// the ::getenv method, but reducing the static vairable usage.
-// 
-void Getenv (const char* name, std::string& value)
+
+bool Getenv(const char * name, std::string & value)
 {
-#ifdef WINDOWS
-    // To remove the security compilation warning, the _dupenv_s method
-    // must be used (instead of the getenv). The improvement is that
-    // the buffer length is now under control to mitigate buffer overflow attacks.
-    //
-    char * val;
-    size_t len = 0;
-    // At least _dupenv_s validates the memory size by returning ENOMEM
-    //  in case of allocation size issue.
-    const errno_t err = ::_dupenv_s(&val, &len, name);
-    if(err!=0 || len==0 || !val || !*val)
+    if (!name || !*name)
     {
-        if(val) free(val);
-        value.resize(0);
+        return false;
+    }
+
+#ifdef _WIN32
+    if(uint32_t size = GetEnvironmentVariable(name, nullptr, 0))
+    {
+        std::vector<char> buffer(size);
+        GetEnvironmentVariable(name, buffer.data(), size);
+        value = std::string(buffer.data());
+        return true;
     }
     else
     {
-        // NB: len is the sizeof() of a string ( i.e. not its strlen() )
-        value = val;
-        value.resize(len-1);
-        if(val) free(val);
+        value.clear();
+        return false;
     }
 #else
-    const char* val = ::getenv(name);
+    const char * val = ::getenv(name);
     value = (val && *val) ? val : "";
-#endif 
+    return val; // Returns true if the env. variable exists but empty.
+#endif
+}
+
+void Setenv(const char * name, const std::string & value)
+{
+    if (!name || !*name)
+    {
+        return;
+    }
+
+    // Note that the Windows _putenv_s() removes the env. variable if the value is empty. But
+    // the Linux ::setenv() sets the env. variable to empty if the value is empty i.e. it still 
+    // exists. To avoid the ambiguity, use Unsetenv() when the env. variable removal if needed.
+
+#ifdef _WIN32
+    _putenv_s(name, value.c_str());
+#else
+    ::setenv(name, value.c_str(), 1);
+#endif
+}
+
+void Unsetenv(const char * name)
+{
+    if (!name || !*name)
+    {
+        return;
+    }
+
+#ifdef _WIN32
+    // Note that the Windows _putenv_s() removes the env. variable if the value is empty.
+    _putenv_s(name, "");
+#else
+    ::unsetenv(name);
+#endif
+}
+
+bool isEnvPresent(const char * name)
+{
+    if (!name || !*name)
+    {
+        return false;
+    }
+
+    std::string value;
+    return Getenv(name, value);
 }
 
 int Strcasecmp(const char * str1, const char * str2)
 {
-#ifdef WINDOWS
+#ifdef _WIN32
     return ::_stricmp(str1, str2);
 #else
     return ::strcasecmp(str1, str2);
@@ -81,18 +124,17 @@ int Strcasecmp(const char * str1, const char * str2)
 
 int Strncasecmp(const char * str1, const char * str2, size_t n)
 {
-#ifdef WINDOWS
+#ifdef _WIN32
     return ::_strnicmp(str1, str2, n);
 #else
     return ::strncasecmp(str1, str2, n);
 #endif
 }
 
-void* AlignedMalloc(size_t size, size_t alignment)
+void * AlignedMalloc(size_t size, size_t alignment)
 {
-#ifdef WINDOWS
-    void* memBlock = _aligned_malloc(size, alignment);
-    return memBlock;
+#ifdef _WIN32
+    return _aligned_malloc(size, alignment);
 #else
     void* memBlock = 0x0;
     if (!posix_memalign(&memBlock, alignment, size)) return memBlock;
@@ -102,94 +144,62 @@ void* AlignedMalloc(size_t size, size_t alignment)
 
 void AlignedFree(void* memBlock)
 {
-#ifdef WINDOWS
+#ifdef _WIN32
     _aligned_free(memBlock);
 #else
     free(memBlock);
 #endif
 }
 
-}//namespace platform
-
-}
-OCIO_NAMESPACE_EXIT
-
-///////////////////////////////////////////////////////////////////////////////
-
-#ifdef OCIO_UNIT_TEST
-
-namespace OCIO = OCIO_NAMESPACE;
-#include "unittest.h"
-
-OIIO_ADD_TEST(Platform, getenv)
+namespace
 {
-    std::string env;
-    OCIO::Platform::Getenv("NotExistingEnvVariable", env);
-    OIIO_CHECK_ASSERT(env.empty());
 
-    OCIO::Platform::Getenv("PATH", env);
-    OIIO_CHECK_ASSERT(!env.empty());
+int GenerateRandomNumber()
+{
+    // Note: Read https://isocpp.org/files/papers/n3551.pdf for details.
 
-    OCIO::Platform::Getenv("NotExistingEnvVariable", env);
-    OIIO_CHECK_ASSERT(env.empty());
+    static std::mt19937 engine{};
+    static std::uniform_int_distribution<> dist{};
 
-    OCIO::Platform::Getenv("PATH", env);
-    OIIO_CHECK_ASSERT(!env.empty());
+    return dist(engine);
 }
 
-OIIO_ADD_TEST(Platform, putenv)
+}
+
+std::string CreateTempFilename(const std::string & filenameExt)
 {
+    std::string filename;
+
+#ifdef _WIN32
+
+    // Note: Because of security issue, tmpnam could not be used.
+
+    char tmpFilename[L_tmpnam_s];
+    if(tmpnam_s(tmpFilename))
     {
-        const std::string value("MY_DUMMY_ENV=SomeValue");
-        ::putenv(const_cast<char*>(value.c_str()));
-        std::string env;
-        OCIO::Platform::Getenv("MY_DUMMY_ENV", env);
-        OIIO_CHECK_ASSERT(!env.empty());
+        throw Exception("Could not create a temporary file.");
+    }
 
-        OIIO_CHECK_ASSERT(0==strcmp("SomeValue", env.c_str()));
-        OIIO_CHECK_EQUAL(strlen("SomeValue"), env.size());
-    }
-    {
-        const std::string value("MY_DUMMY_ENV= ");
-        ::putenv(const_cast<char*>(value.c_str()));
-        std::string env;
-        OCIO::Platform::Getenv("MY_DUMMY_ENV", env);
-        OIIO_CHECK_ASSERT(!env.empty());
+    filename = tmpFilename;
 
-        OIIO_CHECK_ASSERT(0==strcmp(" ", env.c_str()));
-        OIIO_CHECK_EQUAL(strlen(" "), env.size());
-    }
-    {
-        const std::string value("MY_DUMMY_ENV=");
-        ::putenv(const_cast<char*>(value.c_str()));
-        std::string env;
-        OCIO::Platform::Getenv("MY_DUMMY_ENV", env);
-        OIIO_CHECK_ASSERT(env.empty());
-    }
+#else
+
+    // Linux flavors must have a /tmp directory.
+    std::stringstream ss;
+    ss << "/tmp/ocio_" << GenerateRandomNumber();
+
+    filename = ss.str();
+
+#endif
+
+    filename += filenameExt;
+
+    return filename;
 }
 
-OIIO_ADD_TEST(Platform, string_compare)
-{
-    OIIO_CHECK_EQUAL(0, OCIO::Platform::Strcasecmp("TtOoPp", "TtOoPp"));
-    OIIO_CHECK_EQUAL(0, OCIO::Platform::Strcasecmp("TtOoPp", "ttOoPp"));
-    OIIO_CHECK_NE(0, OCIO::Platform::Strcasecmp("TtOoPp", "tOoPp"));
-    OIIO_CHECK_NE(0, OCIO::Platform::Strcasecmp("TtOoPp", "TtOoPp1"));
 
-    OIIO_CHECK_EQUAL(0, OCIO::Platform::Strncasecmp("TtOoPp", "TtOoPp", 2));
-    OIIO_CHECK_EQUAL(0, OCIO::Platform::Strncasecmp("TtOoPp", "ttOoPp", 2));
-    OIIO_CHECK_EQUAL(0, OCIO::Platform::Strncasecmp("TtOoPp", "ttOOOO", 2));
-    OIIO_CHECK_NE(0, OCIO::Platform::Strcasecmp("TtOoPp", "tOoPp"));
-    OIIO_CHECK_NE(0, OCIO::Platform::Strcasecmp("TtOoPp", "TOoPp"));
-}
 
-OIIO_ADD_TEST(Platform, aligned_memory_test)
-{
-    size_t alignement = 16u;
-    void* memBlock = OCIO::Platform::AlignedMalloc(1001, alignement);
+} // Platform
 
-    OIIO_CHECK_ASSERT(memBlock);
-    OIIO_CHECK_EQUAL(((uintptr_t)memBlock) % alignement, 0);
+} // namespace OCIO_NAMESPACE
 
-    OCIO::Platform::AlignedFree(memBlock);
-}
-#endif // OCIO_UNIT_TEST
