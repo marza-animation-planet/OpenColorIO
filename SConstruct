@@ -14,15 +14,6 @@ from excons.tools import glew
 import SCons.Script # pylint: disable=import-error
 
 
-NoUnitTests = True
-if os.path.isfile("./testdata/unittestsfiles.tar.gz"):
-   if not os.path.isdir("./testdata/unittestsfiles"):
-      os.makedirs("./testdata/unittestsfiles")
-      tgz = tarfile.open("./testdata/unittestsfiles.tar.gz")
-      tgz.extractall("./testdata/unittestsfiles")
-      tgz.close()
-      NoUnitTests = False
-
 SCons.Script.ARGUMENTS["use-c++11"] = "1"
 
 env = excons.MakeBaseEnv()
@@ -40,20 +31,16 @@ if ocio_libname is None:
 ocio_sse2 = (excons.GetArgument("ocio-use-sse2", 1, int) != 0)
 ocio_hideinlines = (excons.GetArgument("ocio-hide-inlines", 1, int) != 0)
 ocio_namespace = excons.GetArgument("ocio-namespace", "OpenColorIO")
-ocio_use_boost = (excons.GetArgument("ocio-use-boost", 0, int) != 0)
-ocio_opengl_use_static_ocio = (excons.GetArgument("ocio-opengl-use-static-ocio", 1, int) != 0)
+ocio_extra_builtins = (excons.GetArgument("ocio-extra-builtints", 1, int) != 0)
 ocio_version = (2, 0, 0)
 
-ocio_config = {"OCIO_NAMESPACE"     : ocio_namespace,
-               "OCIO_VERSION_MAJOR" : str(ocio_version[0]),
-               "OCIO_VERSION_MINOR" : str(ocio_version[1]),
-               "OCIO_VERSION_PATCH" : str(ocio_version[2]),
-               "OCIO_VERSION"       : ".".join(map(str, ocio_version)),
-               "SOVERSION"          : str(ocio_version[0]),
-               "OCIO_USE_BOOST_PTR" : str(1 if ocio_use_boost else 0)}
-
-tests_config = {"OCIO_TEST_AREA"           : binDir,
-                "CMAKE_CURRENT_BINARY_DIR" : binDir}
+ocio_config = {"OCIO_NAMESPACE"                   : ocio_namespace,
+               "OpenColorIO_VERSION_MAJOR"        : str(ocio_version[0]),
+               "OpenColorIO_VERSION_MINOR"        : str(ocio_version[1]),
+               "OpenColorIO_VERSION_PATCH"        : str(ocio_version[2]),
+               "OpenColorIO_VERSION"              : ".".join(map(str, ocio_version)),
+               "OpenColorIO_VERSION_RELEASE_TYPE" : "",
+               "SOVERSION"                        : "%s.%s" % (ocio_version[0], ocio_version[1])}
 
 
 defs = []
@@ -69,6 +56,7 @@ if sys.platform != "win32":
    else:
       cppflags += " -Wno-unused-private-field"
       cppflags += " -Wno-unused-function"
+      cppflags += " -Wno-deprecated-register"
 else:
    cppflags += " /wd4101"
    cppflags += " /wd4996"
@@ -77,40 +65,59 @@ else:
 if sys.platform == "darwin":
    # OSSpinLockUnlock used in Mutex.h is deprecated starting MacOS 10.12
    cppflags += " -Wno-deprecated-declarations"
-libincdirs = ["include", "ext/sampleicc/src/include"]
+libincdirs = ["include", "ext/sampleicc/src/include", "src", "src/OpenColorIO", "."]
 libcustoms = []
+libdefs = defs[:]
 if ocio_sse2:
-   defs.append("USE_SSE")
+   libdefs.append("USE_SSE")
    if sys.platform != "win32":
       cflags += " -msse2"
-   else:
-      #cflags += " /arch:SSE2"
-      pass
-if ocio_hideinlines:
-   if sys.platform != "win32":
-      cflags += " -fvisibility-inlines-hidden"
-if ocio_use_boost:
-   libcustoms.append(boost.Require())
+if ocio_extra_builtins:
+   libdefs.append("ADD_EXTRA_BUILTINS")
+if ocio_hideinlines and sys.platform != "win32":
+   cflags += " -fvisibility-inlines-hidden"
 
+# Expat setup
+def ExpatDefaultName(static):
+   return ("libexpat" if (sys.platform == "win32" and static) else "expat")
 
-
-# TinyXML setup
-def TinyXmlDefines(static):
-   if excons.GetArgument("tinyxml-use-stl", 1, int) != 0:
-      return ["TIXML_USE_STL"]
+def ExpatCppDefines(static):
+   if static:
+      return ["XML_STATIC"]
    else:
       return []
 
-rv = excons.ExternalLibRequire("tinyxml", definesFunc=TinyXmlDefines)
-if rv["require"] is None:
-   excons.PrintOnce("OCIO: Build TinyXML from sources ...")
-   excons.Call("TinyXML", imp=["RequireTinyXml"])
-   def TinyXmlRequire(env):
-      RequireTinyXml(env) # pylint: disable=undefined-variable
+rv = excons.ExternalLibRequire("expat", libnameFunc=ExpatDefaultName, definesFunc=ExpatCppDefines)
+if not rv["require"]:
+   excons.PrintOnce("OCIO: Build expat from sources ...")
+   excons.Call("libexpat", imp=["RequireExpat"])
+   def ExpatRequire(env):
+      RequireExpat(env, static=True) # pylint: disable=undefined-variable
 else:
-   TinyXmlRequire = rv["require"]
+   ExpatRequire = rv["require"]
 
-libcustoms.append(TinyXmlRequire)
+libcustoms.append(ExpatRequire)
+
+# Half setup
+def HalfDefaultName(static):
+   return ("libHalf" if (sys.platform == "win32" and static) else "Half")
+
+def HalfCppDefines(static):
+   if not static:
+      return ["OPENEXR_DLL"]
+   else:
+      return []
+
+rv = excons.ExternalLibRequire("half", libnameFunc=HalfDefaultName, definesFunc=HalfCppDefines)
+if not rv["require"]:
+   excons.PrintOnce("OCIO: Build Half from sources ...")
+   excons.Call("openexr", imp=["RequireHalf"])
+   def HalfRequire(env):
+      RequireHalf(env, static=True) # pylint: disable=undefined-variable
+else:
+   HalfRequire = rv["require"]
+
+libcustoms.append(HalfRequire)
 
 # YAML-cpp setup
 def YamlCppDefaultName(static):
@@ -200,49 +207,21 @@ def GenerateFile(target, source, env, opts):
 def GenerateConfig(target, source, env):
    return GenerateFile(target, source, env, ocio_config)
 
-def GenerateTester(target, source, env):
-   return GenerateFile(target, source, env, tests_config)
-
-def RunTests(target, source, env):
-   if sys.platform == "win32":
-      subprocess.call(os.path.splitext(str(target[0]))[0] + ".bat")
-   else:
-      subprocess.call(str(target[0]) + ".sh")
-   return None
-
-def GeneratePyDoc(target, source, env):
-   p = subprocess.Popen(["python", str(source[0]), str(target[0])])
-   p.communicate()
-   return None
 
 env["BUILDERS"]["GenerateConfig"] = SCons.Script.Builder(action=SCons.Script.Action(GenerateConfig, "Generating $TARGET ...", suffix=".h", src_suffix=".h.in"))
-env["BUILDERS"]["GenerateTester"] = SCons.Script.Builder(action=SCons.Script.Action(GenerateTester, "Generating $TARGET ...", suffix="", src_suffix=".in"))
-env["BUILDERS"]["GeneratePyDoc"] = SCons.Script.Builder(action=SCons.Script.Action(GeneratePyDoc, "Generating $TARGET ..."))
 
 
 # OpenColorABI.h is generated directly in the output, avoid possible conflicts
-if os.path.isfile("export/OpenColorIO/OpenColorABI.h"):
-   os.remove("export/OpenColorIO/OpenColorABI.h")
+if os.path.isfile("include/OpenColorIO/OpenColorABI.h"):
+   os.remove("include/OpenColorIO/OpenColorABI.h")
 
 if CheckConfigStatus("lib_config.status", ocio_config):
    WriteConfigStatus("lib_config.status", ocio_config)
 
-if CheckConfigStatus("test_config.status", tests_config):
-   WriteConfigStatus("test_config.status", tests_config)
 
+abih = env.GenerateConfig(incDir + "/OpenColorABI.h", ["include/OpenColorIO/OpenColorABI.h.in", "lib_config.status"])
 
-abih = env.GenerateConfig(incDir + "/OpenColorABI.h", ["export/OpenColorIO/OpenColorABI.h.in", "lib_config.status"])
-if sys.platform != "win32":
-   tester = env.GenerateTester(binDir + "/ocio_core_tests.sh", ["src/core_tests/ocio_core_tests.sh.in", "test_config.status"])
-else:
-   tester = env.GenerateTester(binDir + "/ocio_core_tests.bat", ["src/core_tests/ocio_core_tests.bat.in", "test_config.status"])
-
-
-InstallHeaders = env.Install(incDir, excons.glob("export/OpenColorIO/*.h"))
-
-InstallOpenGLHeaders = env.Install(excons.OutputBaseDirectory()+"/include", excons.glob("src/lang-glsl/*.h"))
-
-pydoc = env.GeneratePyDoc("src/pyglue/PyDoc.h", ["src/pyglue/createPyDocH.py"] + excons.glob("src/pyglue/DocStrings/*.py"))
+InstallHeaders = env.Install(incDir, excons.glob("include/OpenColorIO/*.h"))
 
 
 def OCIOName(static=True):
@@ -261,53 +240,39 @@ def OCIOPath(static=True):
 
 def RequireOCIO(env, static=True):
    if static:
-      env.Append(CPPDEFINES=["OpenColorIO_STATIC"])
-   if ocio_sse2:
-      env.Append(CPPDEFINES=["USE_SSE"])
+      env.Append(CPPDEFINES=["OpenColorIO_SKIP_IMPORTS"])
    env.Append(CPPPATH=[excons.OutputBaseDirectory() + "/include"])
    env.Append(LIBPATH=[excons.OutputBaseDirectory() + "/lib"])
    excons.Link(env, OCIOPath(static), static=static, force=True, silent=True)
+   if sys.platform == "darwin":
+      env.Append(LINKFLAGS=" -framework Carbon -framework IOKit")
    if static:
       YamlCppRequire(env)
-      TinyXmlRequire(env)
-   if ocio_use_boost:
-      boost.Require()(env)
+      ExpatRequire(env)
+      HalfRequire(env)
 
-def OCIOOpenGLName():
-   if sys.platform == "win32":
-      return "libOCIOOpenGL"
-   else:
-      return "OCIOOpenGL"
+BASEsrc = filter(lambda x: not os.path.basename(x).startswith("SystemMonitor_"), excons.glob("src/OpenColorIO/*.cpp"))
 
-def OCIOOpenGLPath():
-   name = OCIOOpenGLName()
-   if sys.platform == "win32":
-      libname = name + ".lib"
-   else:
-      libname = "lib" + name + ".a"
-   return excons.OutputBaseDirectory() + "/lib/" + libname
+BUILTINSsrc = excons.glob("src/OpenColorIO/transforms/builtins/*.cpp")
+if not ocio_extra_builtins:
+   BUILTINSsrc = filter(lambda x: not os.path.basename(x).endswith("Cameras.cpp") and os.path.basename(x) != "Displays.cpp", BUILTINSsrc)
 
-def RequireOCIOOpenGL(env):
-   RequireOCIO(env, static=ocio_opengl_use_static_ocio)
-   gl.Require(env)
-   if sys.platform != "darwin":
-      glew.Require(env)
-   excons.Link(env, OCIOOpenGLPath(), static=True, force=True, silent=True)
-
+PYSTRINGsrc = ["pystring/pystring.cpp"]
 
 projs = [
    {  "name": OCIOName(True),
       "type": "staticlib",
       "alias": "ocio-static",
       "symvis": "default",
-      "defs": defs + ["OpenColorIO_STATIC"],
+      "defs": libdefs + ["OpenColorIO_SKIP_IMPORTS"],
       "cflags": cflags,
       "cppflags": cppflags,
       "incdirs": libincdirs,
-      "srcs": excons.glob("src/OpenColorIO/*.cpp") +
-              excons.glob("src/OpenColorIO/fileformats/*.cpp") +
+      "srcs": BASEsrc + BUILTINSsrc + PYSTRINGsrc +
+              excons.glob("src/OpenColorIO/apphelpers/*.cpp") +
+              excons.CollectFiles("src/OpenColorIO/fileformats", patterns=["*.cpp"], recursive=True) +
               excons.glob("src/OpenColorIO/md5/*.cpp") +
-              excons.glob("src/OpenColorIO/ops/*.cpp") +
+              excons.CollectFiles("src/OpenColorIO/ops", patterns=["*.cpp"], recursive=True) +
               excons.glob("src/OpenColorIO/transforms/*.cpp"),
       "custom": libcustoms
    },
@@ -317,48 +282,41 @@ projs = [
       "version": ".".join(map(str, ocio_version)),
       "soname": "lib%s.so.%d" % (ocio_libname, ocio_version[0]),
       "install_name": "lib%s.%d.dylib" % (ocio_libname, ocio_version[0]),
-      "defs": defs + ["OpenColorIO_EXPORTS"],
+      "defs": libdefs + ["OpenColorIO_EXPORTS"],
       "cflags": cflags,
       "cppflags": cppflags,
+      "linkflags": ("" if sys.platform != "darwin" else "-framework Carbon -framework IOKit"),
       "incdirs": libincdirs,
-      "srcs": excons.glob("src/core/*.cpp") +
-              excons.glob("src/core/md5/*.cpp") +
-              excons.glob("src/core/pystring/*.cpp"),
+      "srcs": BASEsrc + BUILTINSsrc + PYSTRINGsrc +
+              excons.glob("src/OpenColorIO/apphelpers/*.cpp") +
+              excons.CollectFiles("src/OpenColorIO/fileformats", patterns=["*.cpp"], recursive=True) +
+              excons.glob("src/OpenColorIO/md5/*.cpp") +
+              excons.CollectFiles("src/OpenColorIO/ops", patterns=["*.cpp"], recursive=True) +
+              excons.glob("src/OpenColorIO/transforms/*.cpp"),
       "custom": libcustoms
    },
-   # OCIOOpenGL
-   {
-      "name": OCIOOpenGLName(),
-      "type": "staticlib",
-      "alias": "ocio-opengl",
-      "symvis": "default",
-      "cflags": cflags,
-      "cppflags": cppflags,
-      "incdirs": ["src/lang-glsl"],
-      "srcs": excons.glob("src/lang-glsl/*.cpp"),
-      "custom": [RequireOCIOOpenGL]
-   },
    # Python binding
-   {  "name": "PyOpenColorIO",
-      "type": "dynamicmodule",
-      "alias": "ocio-python",
-      "ext": python.ModuleExtension(),
-      "prefix": python.ModulePrefix() + "/" + python.Version(),
-      "incdirs": ["export", "src/pyglue"],
-      "defs": ["PYOCIO_NAME=PyOpenColorIO"],
-      "cflags": cflags,
-      "cppflags": cppflags,
-      "srcs": excons.glob("src/pyglue/*.cpp"),
-      "custom": [lambda x: RequireOCIO(x, static=True), python.SoftRequire],
-   },
+   # {  "name": "PyOpenColorIO",
+   #    "type": "dynamicmodule",
+   #    "alias": "ocio-python",
+   #    "ext": python.ModuleExtension(),
+   #    "prefix": python.ModulePrefix() + "/" + python.Version(),
+   #    "incdirs": ["export", "src/pyglue"],
+   #    "defs": ["PYOCIO_NAME=PyOpenColorIO"],
+   #    "cflags": cflags,
+   #    "cppflags": cppflags,
+   #    "srcs": excons.glob("src/pyglue/*.cpp"),
+   #    "custom": [lambda x: RequireOCIO(x, static=True), python.SoftRequire],
+   # },
    # Command line tools
    {  "name": "ociobakelut",
       "type": "program",
       "defs": defs,
       "cflags": cflags,
       "cppflags": cppflags,
-      "incdirs": ["src/apps/share"],
-      "srcs": excons.glob("src/apps/ociobakelut/*.cpp") + ["src/apps/share/strutil.cpp", "src/apps/share/argparse.cpp"],
+      "incdirs": ["src"],
+      "srcs": excons.glob("src/apps/ociobakelut/*.cpp") +
+              ["src/apputils/strutil.cpp", "src/apputils/argparse.cpp"],
       "custom": [lambda x: RequireOCIO(x, static=True), Lcms2Require],
    },
    {  "name": "ociocheck",
@@ -366,27 +324,12 @@ projs = [
       "defs": defs,
       "cflags": cflags,
       "cppflags": cppflags,
-      "incdirs": ["src/apps/share"],
-      "srcs": excons.glob("src/apps/ociocheck/*.cpp") + ["src/apps/share/strutil.cpp", "src/apps/share/argparse.cpp"],
+      "incdirs": ["src"],
+      "srcs": excons.glob("src/apps/ociocheck/*.cpp") +
+              ["src/apputils/strutil.cpp", "src/apputils/argparse.cpp"],
       "custom": [lambda x: RequireOCIO(x, static=True)],
    }
 ]
-if not NoUnitTests:
-   # Unit tests
-   projs.append({ "name": "ocio_core_tests",
-                  "type": "program",
-                  "alias": "ocio-tests",
-                  "defs": defs + ["OCIO_UNIT_TEST",
-                                  "OCIO_SOURCE_DIR=\"%s\"" % os.path.abspath(".").replace("\\", "/"),
-                                  "OCIO_UNIT_TEST_FILES_DIR=\"%s\"" % os.path.abspath(".").replace("\\", "/") + "/testdata/unittestsfiles"],
-                  "cflags": cflags,
-                  "cppflags": cppflags,
-                  "incdirs": libincdirs,
-                  "srcs": excons.glob("src/core/*.cpp") +
-                        excons.glob("src/core/md5/*.cpp") +
-                        excons.glob("src/core/pystring/*.cpp"),
-                  "custom": [lambda x: RequireOCIO(x, static=True)],
-                  "post": [SCons.Script.Action(RunTests, "Running Tests ...")] })
 
 excons.AddHelpOptions(opencolorio="""OPENCOLORIO OPTIONS
   ocio-name                       : Library name                        ["OpenColorIO"]
@@ -394,16 +337,14 @@ excons.AddHelpOptions(opencolorio="""OPENCOLORIO OPTIONS
                                     (Ignored if ocio-name flag is set)
   ocio-namespace=<str>            : Library namespace                   ["OpenColorIO"]
   ocio-use-sse2=0|1               : Use SSE2 instructions               [1]
-  ocio-use-boost=0|1              : Use boost shared_ptr                [0]
   ocio-hide-inlines=0|1           : Hide inline functions               [1]
-  ocio-opengl-use-static-ocio=0|1 : Link OCIOOpenGL against static OCIO [1]""")
+  ocio-extra-builtins=0|1         : Extra builtins transforms           [1]""")
 
 excons.AddHelpTargets({"ocio-tools": "ociobakelut, ociocheck",
                        "ocio-static": "OCIO static library",
                        "ocio-shared": "OCIO shared library",
-                       "ocio-opengl": "OCIO OpenGL library",
                        "ocio-libs": "OCIO static and shared libraries",
-                       "ocio": "ocio-shared, ocio-static, ocio-python, ociobakelut, ociocheck"})
+                       "ocio": "ocio-shared, ocio-static, ociobakelut, ociocheck"}) # ocio-python
 if OCIOName(True) == OCIOName(False):
    excons.AddHelpTargets({OCIOName(True): "OCIO static and shared libraries"})
 
@@ -411,19 +352,15 @@ targets = excons.DeclareTargets(env, projs)
 
 env.Depends(targets["ocio-shared"], InstallHeaders)
 env.Depends(targets["ocio-static"], InstallHeaders)
-env.Depends(targets["ocio-opengl"], InstallOpenGLHeaders)
-env.Alias("ocio-tests", tester)
 env.Alias("ocio-libs", targets["ocio-shared"])
 env.Alias("ocio-libs", targets["ocio-static"])
-env.Alias("ocio-libs", targets["ocio-opengl"])
 env.Alias("ocio", targets["ocio-shared"])
 env.Alias("ocio", targets["ocio-static"])
-env.Alias("ocio", targets["ocio-opengl"])
-env.Alias("ocio", targets["ocio-python"])
+# env.Alias("ocio", targets["ocio-python"])
 env.Alias("ocio", targets["ociobakelut"])
 env.Alias("ocio", targets["ociocheck"])
 env.Alias("ocio-tools", targets["ociobakelut"])
 env.Alias("ocio-tools", targets["ociocheck"])
 
-SCons.Script.Export("OCIOName OCIOPath RequireOCIO OCIOOpenGLName OCIOOpenGLPath RequireOCIOOpenGL")
+SCons.Script.Export("OCIOName OCIOPath RequireOCIO")
 

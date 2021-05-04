@@ -15,7 +15,6 @@ mastercopy
 /release
 /debug
 /.build
-/testdata/unittestsfiles/
 excons.cache
 *.dblite
 export/OpenColorIO/OpenColorABI.h
@@ -26,3 +25,5 @@ ext/*/
 /*_config.status
 *.automake.*
 *.cmake.*
+/.sconf_temp/*
+/config.log

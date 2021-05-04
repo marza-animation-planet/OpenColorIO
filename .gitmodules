@@ -1,12 +1,18 @@
 [submodule "excons"]
 	path = excons
 	url = git://github.com/gatgui/excons.git
-[submodule "TinyXML"]
-	path = TinyXML
-	url = git://github.com/gatgui/TinyXML
 [submodule "Little-CMS"]
 	path = Little-CMS
 	url = git://github.com/gatgui/Little-CMS
 [submodule "yaml-cpp"]
 	path = yaml-cpp
 	url = git://github.com/gatgui/yaml-cpp
+[submodule "pystring"]
+	path = pystring
+	url = git://github.com/imageworks/pystring.git
+[submodule "openexr"]
+	path = openexr
+	url = git://github.com/gatgui/openexr
+[submodule "libexpat"]
+	path = libexpat
+	url = git://github.com/gatgui/libexpat
