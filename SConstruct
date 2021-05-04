@@ -10,7 +10,7 @@ import tarfile
 from excons.tools import boost
 from excons.tools import python
 from excons.tools import gl
-from excons.tools import glew
+from excons.tools import glut
 import SCons.Script # pylint: disable=import-error
 
 
@@ -164,6 +164,32 @@ if not rv["require"]:
          pass
 else:
    Lcms2Require = rv["require"]
+
+# GLEW setup
+build_glew = (len(SCons.Script.COMMAND_LINE_TARGETS) == 0)
+for t in SCons.Script.COMMAND_LINE_TARGETS:
+   if t in ("ocio", "ocio-tools", "ociochecklut"):
+      build_glew = True
+
+def GlewName(static):
+   suffix = "_s" if static else ""
+   return ("libglew" if (sys.platform == "win32" and static) else "glew") + suffix
+
+def GlewCppDefines(static):
+   if static:
+      return ["GLEW_STATIC"]
+   else:
+      return []
+
+rv = excons.ExternalLibRequire("glew", libnameFunc=GlewName, definesFunc=GlewCppDefines)
+if not rv["require"]:
+   excons.PrintOnce("OCIO: Build GLEW from sources ...")
+   excons.Call("glew", imp=["RequireGlew"])
+   def GlewRequire(env):
+      RequireGlew(env, static=True) # pylint: disable=undefined-variable
+else:
+   GlewRequire = rv["require"]
+
 
 # TODO
 # - Nuke project
@@ -328,6 +354,38 @@ projs = [
       "srcs": excons.glob("src/apps/ociocheck/*.cpp") +
               ["src/apputils/strutil.cpp", "src/apputils/argparse.cpp"],
       "custom": [lambda x: RequireOCIO(x, static=True)],
+   },
+   {  "name": "ociochecklut",
+      "type": "program",
+      "defs": defs + ["OCIO_GL_ENABLED", "OCIO_GPU_ENABLED"],
+      "cflags": cflags,
+      "cppflags": cppflags,
+      "incdirs": ["src", "src/libutils/oglapphelpers"],
+      "srcs": excons.glob("src/apps/ociochecklut/*.cpp") +
+              excons.glob("src/libutils/oglapphelpers/*.cpp") +
+              ["src/apputils/strutil.cpp", "src/apputils/argparse.cpp"],
+      "custom": [lambda x: RequireOCIO(x, static=True),
+                 glut.Require, GlewRequire, gl.Require],
+   },
+   {  "name": "ociomakeclf",
+      "type": "program",
+      "defs": defs,
+      "cflags": cflags,
+      "cppflags": cppflags,
+      "incdirs": ["src"],
+      "srcs": excons.glob("src/apps/ociomakeclf/*.cpp") +
+              ["src/apputils/strutil.cpp", "src/apputils/argparse.cpp"],
+      "custom": [lambda x: RequireOCIO(x, static=True)],
+   },
+   {  "name": "ociowrite",
+      "type": "program",
+      "defs": defs,
+      "cflags": cflags,
+      "cppflags": cppflags,
+      "incdirs": ["src"],
+      "srcs": excons.glob("src/apps/ociowrite/*.cpp") +
+              ["src/apputils/strutil.cpp", "src/apputils/argparse.cpp"],
+      "custom": [lambda x: RequireOCIO(x, static=True)],
    }
 ]
 
@@ -344,7 +402,7 @@ excons.AddHelpTargets({"ocio-tools": "ociobakelut, ociocheck",
                        "ocio-static": "OCIO static library",
                        "ocio-shared": "OCIO shared library",
                        "ocio-libs": "OCIO static and shared libraries",
-                       "ocio": "ocio-shared, ocio-static, ocio-python, ociobakelut, ociocheck"})
+                       "ocio": "ocio-shared, ocio-static, ocio-python, ociobakelut, ociocheck, ociochecklut, ociomakeclt, ociowrite"})
 if OCIOName(True) == OCIOName(False):
    excons.AddHelpTargets({OCIOName(True): "OCIO static and shared libraries"})
 
@@ -359,8 +417,14 @@ env.Alias("ocio", targets["ocio-static"])
 env.Alias("ocio", targets["ocio-python"])
 env.Alias("ocio", targets["ociobakelut"])
 env.Alias("ocio", targets["ociocheck"])
+env.Alias("ocio", targets["ociochecklut"])
+env.Alias("ocio", targets["ociomakeclf"])
+env.Alias("ocio", targets["ociowrite"])
 env.Alias("ocio-tools", targets["ociobakelut"])
 env.Alias("ocio-tools", targets["ociocheck"])
+env.Alias("ocio-tools", targets["ociochecklut"])
+env.Alias("ocio-tools", targets["ociomakeclf"])
+env.Alias("ocio-tools", targets["ociowrite"])
 
 SCons.Script.Export("OCIOName OCIOPath RequireOCIO")
 
