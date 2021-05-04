@@ -296,18 +296,18 @@ projs = [
       "custom": libcustoms
    },
    # Python binding
-   # {  "name": "PyOpenColorIO",
-   #    "type": "dynamicmodule",
-   #    "alias": "ocio-python",
-   #    "ext": python.ModuleExtension(),
-   #    "prefix": python.ModulePrefix() + "/" + python.Version(),
-   #    "incdirs": ["export", "src/pyglue"],
-   #    "defs": ["PYOCIO_NAME=PyOpenColorIO"],
-   #    "cflags": cflags,
-   #    "cppflags": cppflags,
-   #    "srcs": excons.glob("src/pyglue/*.cpp"),
-   #    "custom": [lambda x: RequireOCIO(x, static=True), python.SoftRequire],
-   # },
+   {  "name": "PyOpenColorIO",
+      "type": "dynamicmodule",
+      "alias": "ocio-python",
+      "ext": python.ModuleExtension(),
+      "prefix": python.ModulePrefix() + "/" + python.Version(),
+      "incdirs": ["src/bindings/python", "pybind11/include", "src", "share/docs"], # empty docstrings
+      "defs": ["PYOCIO_NAME=PyOpenColorIO"],
+      "cflags": cflags,
+      "cppflags": cppflags,
+      "srcs": excons.CollectFiles("src/bindings/python", patterns=["*.cpp"]),
+      "custom": [lambda x: RequireOCIO(x, static=True), python.SoftRequire],
+   },
    # Command line tools
    {  "name": "ociobakelut",
       "type": "program",
@@ -344,7 +344,7 @@ excons.AddHelpTargets({"ocio-tools": "ociobakelut, ociocheck",
                        "ocio-static": "OCIO static library",
                        "ocio-shared": "OCIO shared library",
                        "ocio-libs": "OCIO static and shared libraries",
-                       "ocio": "ocio-shared, ocio-static, ociobakelut, ociocheck"}) # ocio-python
+                       "ocio": "ocio-shared, ocio-static, ocio-python, ociobakelut, ociocheck"})
 if OCIOName(True) == OCIOName(False):
    excons.AddHelpTargets({OCIOName(True): "OCIO static and shared libraries"})
 
@@ -356,7 +356,7 @@ env.Alias("ocio-libs", targets["ocio-shared"])
 env.Alias("ocio-libs", targets["ocio-static"])
 env.Alias("ocio", targets["ocio-shared"])
 env.Alias("ocio", targets["ocio-static"])
-# env.Alias("ocio", targets["ocio-python"])
+env.Alias("ocio", targets["ocio-python"])
 env.Alias("ocio", targets["ociobakelut"])
 env.Alias("ocio", targets["ociocheck"])
 env.Alias("ocio-tools", targets["ociobakelut"])

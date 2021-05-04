@@ -16,3 +16,6 @@
 [submodule "libexpat"]
 	path = libexpat
 	url = git://github.com/gatgui/libexpat
+[submodule "pybind11"]
+	path = pybind11
+	url = git://github.com/pybind/pybind11
