@@ -232,14 +232,19 @@ def GenerateFile(target, source, env, opts):
       with open(str(target[0]), "w") as dst:
          e = re.compile("@([^@]+)@")
          for line in src.readlines():
-            m = e.search(line)
-            if m is not None:
+            remain = line
+            line = ""
+            m = e.search(remain)
+            while m is not None:
                opt = m.group(1)
                if opt in opts:
-                  # LLVM backend build not yet supported
-                  line = line.replace(m.group(0), opts[opt])
+                  line += remain[:m.start(0)] + str(opts[opt])
                else:
                   excons.WarnOnce("Unsupported config option '%s'" % opt)
+                  line += remain[:m.end(0)]
+               remain = remain[m.end(0):]
+               m = e.search(remain)
+            line += remain
             dst.write(line)
    shutil.copystat(str(source[0]), str(target[0]))
    return None
