@@ -103,7 +103,7 @@ def HalfDefaultName(static):
    return ("libHalf" if (sys.platform == "win32" and static) else "Half")
 
 def HalfCppDefines(static):
-   if not static:
+   if not static and sys.platform == "win32":
       return ["OPENEXR_DLL"]
    else:
       return []
@@ -193,6 +193,20 @@ else:
 
 # TODO
 # - Nuke project
+
+
+# pybind
+if not os.path.isfile("pybind11/include/pybind11/pybind11.h"):
+   cmd = "git submodule update --init pybind11"
+   p = subprocess.Popen(cmd, shell=True)
+   p.communicate()
+
+# pystring
+if not os.path.isfile("pystring/pystring.h"):
+   cmd = "git submodule update --init pystring"
+   p = subprocess.Popen(cmd, shell=True)
+   p.communicate()
+
 
 
 def CheckConfigStatus(path, opts):
