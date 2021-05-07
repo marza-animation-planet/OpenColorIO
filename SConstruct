@@ -90,7 +90,7 @@ def TinyXmlDefines(static):
 rv = excons.ExternalLibRequire("tinyxml", definesFunc=TinyXmlDefines)
 if rv["require"] is None:
    excons.PrintOnce("OCIO: Build TinyXML from sources ...")
-   excons.Call("TinyXML", imp=["RequireTinyXml"])
+   excons.Call("TinyXML", targets=["tinyxml"], imp=["RequireTinyXml"])
    def TinyXmlRequire(env):
       RequireTinyXml(env) # pylint: disable=undefined-variable
 else:
@@ -114,7 +114,7 @@ def YamlCppEnv(env, static):
 rv = excons.ExternalLibRequire("yamlcpp", libnameFunc=YamlCppDefaultName, definesFunc=YamlCppDefines, extraEnvFunc=YamlCppEnv)
 if not rv["require"]:
    excons.PrintOnce("OCIO: Build YAML-CPP from sources ...")
-   excons.Call("yaml-cpp", imp=["RequireYamlCpp"])
+   excons.Call("yaml-cpp", targets=["yamlcpp"], imp=["RequireYamlCpp"])
    def YamlCppRequire(env):
       RequireYamlCpp(env) # pylint: disable=undefined-variable
 else:
@@ -135,7 +135,7 @@ rv = excons.ExternalLibRequire("lcms2", definesFunc=Lcms2Defines)
 if not rv["require"]:
    if build_lcms2:
       excons.PrintOnce("OCIO: Build lcms2 from sources ...")
-      excons.Call("Little-CMS", imp=["RequireLCMS2"])
+      excons.Call("Little-CMS", ["lcms2"], imp=["RequireLCMS2"])
       def Lcms2Require(env):
          RequireLCMS2(env) # pylint: disable=undefined-variable
    else:
