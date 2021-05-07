@@ -77,6 +77,27 @@ if ocio_extra_builtins:
 if ocio_hideinlines and sys.platform != "win32":
    cflags += " -fvisibility-inlines-hidden"
 
+# zlib setup
+zlibspecs = {}
+
+def ZlibName(static):
+    return ("z" if sys.platform != "win32" else ("zlib" if static else "zdll"))
+
+def ZlibDefines(static):
+    return ([] if (static or sys.platform != "win32") else ["ZLIB_DLL"])
+
+rv = excons.ExternalLibRequire("zlib", libnameFunc=ZlibName, definesFunc=ZlibDefines)
+if not rv["require"]:
+    excons.PrintOnce("OCIO: Build zlib from sources ...")
+    excons.Call("zlib", targets=["zlib"], imp=["ZlibName", "ZlibPath", "RequireZlib"])
+    def ZlibRequire(env):
+        return RequireZlib(env, static=True) # pylint: disable=undefined-variable
+    zlibspecs = {"with-zlib": os.path.dirname(os.path.dirname(ZlibPath(static=True))), # pylint: disable=undefined-variable
+                 "zlib-name": ZlibName(static=True),
+                 "zlib-static": 1}
+else:
+    ZlibRequire = rv["require"]
+
 # Expat setup
 def ExpatDefaultName(static):
    return ("libexpat" if (sys.platform == "win32" and static) else "expat")
@@ -90,7 +111,7 @@ def ExpatCppDefines(static):
 rv = excons.ExternalLibRequire("expat", libnameFunc=ExpatDefaultName, definesFunc=ExpatCppDefines)
 if not rv["require"]:
    excons.PrintOnce("OCIO: Build expat from sources ...")
-   excons.Call("libexpat", imp=["RequireExpat"])
+   excons.Call("libexpat", targets=["expat"], imp=["RequireExpat"])
    def ExpatRequire(env):
       RequireExpat(env, static=True) # pylint: disable=undefined-variable
 else:
@@ -111,7 +132,7 @@ def HalfCppDefines(static):
 rv = excons.ExternalLibRequire("half", libnameFunc=HalfDefaultName, definesFunc=HalfCppDefines)
 if not rv["require"]:
    excons.PrintOnce("OCIO: Build Half from sources ...")
-   excons.Call("openexr", imp=["RequireHalf"])
+   excons.Call("openexr", targets=["Half-static"], overrides=zlibspecs, imp=["RequireHalf"])
    def HalfRequire(env):
       RequireHalf(env, static=True) # pylint: disable=undefined-variable
 else:
@@ -135,7 +156,7 @@ def YamlCppEnv(env, static):
 rv = excons.ExternalLibRequire("yamlcpp", libnameFunc=YamlCppDefaultName, definesFunc=YamlCppDefines, extraEnvFunc=YamlCppEnv)
 if not rv["require"]:
    excons.PrintOnce("OCIO: Build YAML-CPP from sources ...")
-   excons.Call("yaml-cpp", imp=["RequireYamlCpp"])
+   excons.Call("yaml-cpp", targets=["yamlcpp"], imp=["RequireYamlCpp"])
    def YamlCppRequire(env):
       RequireYamlCpp(env) # pylint: disable=undefined-variable
 else:
@@ -156,7 +177,7 @@ rv = excons.ExternalLibRequire("lcms2", definesFunc=Lcms2Defines)
 if not rv["require"]:
    if build_lcms2:
       excons.PrintOnce("OCIO: Build lcms2 from sources ...")
-      excons.Call("Little-CMS", imp=["RequireLCMS2"])
+      excons.Call("Little-CMS", targets=["lcms2"], overrides=zlibspecs, imp=["RequireLCMS2"])
       def Lcms2Require(env):
          RequireLCMS2(env) # pylint: disable=undefined-variable
    else:
@@ -184,7 +205,7 @@ def GlewCppDefines(static):
 rv = excons.ExternalLibRequire("glew", libnameFunc=GlewName, definesFunc=GlewCppDefines)
 if not rv["require"]:
    excons.PrintOnce("OCIO: Build GLEW from sources ...")
-   excons.Call("glew", imp=["RequireGlew"])
+   excons.Call("glew", targets=["GLEW"], imp=["RequireGlew"])
    def GlewRequire(env):
       RequireGlew(env, static=True) # pylint: disable=undefined-variable
 else:

@@ -22,3 +22,6 @@
 [submodule "glew"]
 	path = glew
 	url = git://github.com/gatgui/glew
+[submodule "zlib"]
+	path = zlib
+	url = git://github.com/gatgui/zlib
