@@ -14,7 +14,15 @@ from excons.tools import glut
 import SCons.Script # pylint: disable=import-error
 
 
-SCons.Script.ARGUMENTS["use-c++11"] = "1"
+#SCons.Script.ARGUMENTS["use-c++11"] = "1"
+
+excons.InitGlobals()
+
+if sys.platform.startswith("linux"):
+   dts = excons.GetArgument("devtoolset", "")
+   if not dts or int(dts) < 6:
+      print("GCC 6 or above required")
+      sys.exit(0)
 
 env = excons.MakeBaseEnv()
 
