@@ -14,8 +14,6 @@ from excons.tools import glut
 import SCons.Script # pylint: disable=import-error
 
 
-#SCons.Script.ARGUMENTS["use-c++11"] = "1"
-
 excons.InitGlobals()
 
 if sys.platform.startswith("linux"):
@@ -23,6 +21,9 @@ if sys.platform.startswith("linux"):
    if not dts or int(dts) < 6:
       print("GCC 6 or above required")
       sys.exit(0)
+else:
+   # on other platform, require c++11 standard
+   SCons.Script.ARGUMENTS["use-c++11"] = "1"
 
 env = excons.MakeBaseEnv()
 
