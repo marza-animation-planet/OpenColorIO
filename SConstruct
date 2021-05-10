@@ -123,24 +123,15 @@ else:
 libcustoms.append(YamlCppRequire)
 
 # LCMS setup (required only by ociobakelut)
-build_lcms2 = (len(SCons.Script.COMMAND_LINE_TARGETS) == 0)
-for t in SCons.Script.COMMAND_LINE_TARGETS:
-   if t in ("ocio", "ocio-tools", "ociobakelut"):
-      build_lcms2 = True
-
 def Lcms2Defines(static):
    return (["CMS_DLL"] if not static else [])
 
 rv = excons.ExternalLibRequire("lcms2", definesFunc=Lcms2Defines)
 if not rv["require"]:
-   if build_lcms2:
-      excons.PrintOnce("OCIO: Build lcms2 from sources ...")
-      excons.Call("Little-CMS", ["lcms2"], imp=["RequireLCMS2"])
-      def Lcms2Require(env):
-         RequireLCMS2(env) # pylint: disable=undefined-variable
-   else:
-      def Lcms2Require(env):
-         pass
+   excons.PrintOnce("OCIO: Build lcms2 from sources ...")
+   excons.Call("Little-CMS", ["lcms2"], imp=["RequireLCMS2"])
+   def Lcms2Require(env):
+      RequireLCMS2(env) # pylint: disable=undefined-variable
 else:
    Lcms2Require = rv["require"]
 
