@@ -69,9 +69,6 @@ if ocio_sse2:
    defs.append("USE_SSE")
    if sys.platform != "win32":
       cflags += " -msse2"
-   else:
-      #cflags += " /arch:SSE2"
-      pass
 if ocio_hideinlines:
    if sys.platform != "win32":
       cflags += " -fvisibility-inlines-hidden"
@@ -259,7 +256,6 @@ projs = [
    {  "name": OCIOName(True),
       "type": "staticlib",
       "alias": "ocio-static",
-      "symvis": "default",
       "defs": defs + ["OpenColorIO_STATIC"],
       "cflags": cflags,
       "cppflags": cppflags,
@@ -272,6 +268,7 @@ projs = [
    {  "name": OCIOName(False),
       "type": "sharedlib",
       "alias": "ocio-shared",
+      "symvis": "hidden",
       "version": ".".join(map(str, ocio_version)),
       "soname": "lib%s.so.%d" % (ocio_libname, ocio_version[0]),
       "install_name": "lib%s.%d.dylib" % (ocio_libname, ocio_version[0]),
