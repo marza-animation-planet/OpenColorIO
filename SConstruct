@@ -81,8 +81,6 @@ if ocio_sse2:
    libdefs.append("USE_SSE")
    if sys.platform != "win32":
       cflags += " -msse2"
-   else:
-      cflags += " /arch:SSE2"
 if ocio_extra_builtins:
    libdefs.append("ADD_EXTRA_BUILTINS")
 if ocio_hideinlines and sys.platform != "win32":
