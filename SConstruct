@@ -41,7 +41,7 @@ ocio_sse2 = (excons.GetArgument("ocio-use-sse2", 1, int) != 0)
 ocio_hideinlines = (excons.GetArgument("ocio-hide-inlines", 1, int) != 0)
 ocio_namespace = excons.GetArgument("ocio-namespace", "OpenColorIO")
 ocio_extra_builtins = (excons.GetArgument("ocio-extra-builtints", 1, int) != 0)
-ocio_version = (2, 0, 0)
+ocio_version = (2, 0, 1)
 
 ocio_config = {"OCIO_NAMESPACE"                   : ocio_namespace,
                "OpenColorIO_VERSION_MAJOR"        : str(ocio_version[0]),
@@ -81,6 +81,8 @@ if ocio_sse2:
    libdefs.append("USE_SSE")
    if sys.platform != "win32":
       cflags += " -msse2"
+   else:
+      cflags += " /arch:SSE2"
 if ocio_extra_builtins:
    libdefs.append("ADD_EXTRA_BUILTINS")
 if ocio_hideinlines and sys.platform != "win32":
@@ -324,7 +326,6 @@ projs = [
    {  "name": OCIOName(True),
       "type": "staticlib",
       "alias": "ocio-static",
-      "symvis": "default",
       "defs": libdefs + ["OpenColorIO_SKIP_IMPORTS"],
       "cflags": cflags,
       "cppflags": cppflags,
@@ -340,6 +341,7 @@ projs = [
    {  "name": OCIOName(False),
       "type": "sharedlib",
       "alias": "ocio-shared",
+      "symvis": "hidden",
       "version": ".".join(map(str, ocio_version)),
       "soname": "lib%s.so.%d" % (ocio_libname, ocio_version[0]),
       "install_name": "lib%s.%d.dylib" % (ocio_libname, ocio_version[0]),
