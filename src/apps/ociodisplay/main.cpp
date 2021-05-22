@@ -412,20 +412,18 @@ void UpdateOCIOGLState()
         return;
     }
 
-    // Set shader.
-    OCIO::GpuShaderDescRcPtr shaderDesc;
-    if (g_gpulegacy)
-    {
-        shaderDesc = OCIO::GpuShaderDesc::CreateLegacyShaderDesc(32);
-    }
-    else
-    {
-        shaderDesc = OCIO::GpuShaderDesc::CreateShaderDesc();
-    }
+    // Set the shader context.
+    OCIO::GpuShaderDescRcPtr shaderDesc = OCIO::GpuShaderDesc::CreateShaderDesc();
     shaderDesc->setLanguage(OCIO::GPU_LANGUAGE_GLSL_1_2);
     shaderDesc->setFunctionName("OCIODisplay");
     shaderDesc->setResourcePrefix("ocio_");
-    processor->getOptimizedGPUProcessor(g_optimization)->extractGpuShaderInfo(shaderDesc);
+
+    // Extract the shader information.
+    OCIO::ConstGPUProcessorRcPtr gpu
+        = g_gpulegacy ? processor->getOptimizedLegacyGPUProcessor(g_optimization, 32)
+                      : processor->getOptimizedGPUProcessor(g_optimization);
+    gpu->extractGpuShaderInfo(shaderDesc);
+
     g_oglApp->setShader(shaderDesc);
 }
 
@@ -694,8 +692,10 @@ int main(int argc, char **argv)
         if(env && *env)
         {
             std::cout << std::endl;
-            std::cout << "OCIO Configuration: '" << env << "'" << std::endl;
-            std::cout << "OCIO search_path:    " << config->getSearchPath() << std::endl;
+            std::cout << "OCIO Config. file   : '" << env << "'" << std::endl;
+            std::cout << "OCIO Config. version: " << config->getMajorVersion() << "." 
+                                                  << config->getMinorVersion() << std::endl;
+            std::cout << "OCIO search_path    : " << config->getSearchPath() << std::endl;
         }
     }
 

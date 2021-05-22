@@ -42,11 +42,13 @@ endif()
 
 if(USE_GCC OR USE_CLANG)
 
-    # -Wswitch-enum Enables warning in switch when an enumeration value is not explicitly handled.
-    set(PLATFORM_COMPILE_FLAGS "${PLATFORM_COMPILE_FLAGS} -Wall -Wswitch-enum")
+    set(PLATFORM_COMPILE_FLAGS "${PLATFORM_COMPILE_FLAGS} -Wall")
 
-    # TODO: OCIO being under active development, unused functions are fine for now.
-    set(PLATFORM_COMPILE_FLAGS "${PLATFORM_COMPILE_FLAGS} -Wno-unused-function")
+    # Add more warning detection.
+    set(PLATFORM_COMPILE_FLAGS "${PLATFORM_COMPILE_FLAGS} -Wextra")
+
+    # -Wswitch-enum Enables warning in switch when an enumeration value is not explicitly handled.
+    set(PLATFORM_COMPILE_FLAGS "${PLATFORM_COMPILE_FLAGS} -Wswitch-enum")
 
     if(OCIO_WARNING_AS_ERROR)
         set(PLATFORM_COMPILE_FLAGS "${PLATFORM_COMPILE_FLAGS} -Werror")
@@ -77,3 +79,18 @@ if(NOT HAVE_SSE2)
     message(STATUS "Disabling SSE optimizations, as the target doesn't support them")
     set(OCIO_USE_SSE OFF)
 endif(NOT HAVE_SSE2)
+
+
+###############################################################################
+# Define RPATH.
+
+if (UNIX AND NOT CMAKE_SKIP_RPATH)
+    # With the 'usual' install path structure in mind, search from the bin directory
+    # (i.e. a binary loading a dynamic library) and then from the current directory
+    # (i.e. dynamic library loading another dynamic library).  
+    if (APPLE)
+        set(CMAKE_INSTALL_RPATH "@loader_path/../lib;@loader_path")
+    else()
+        set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib;$ORIGIN")
+    endif()
+endif()

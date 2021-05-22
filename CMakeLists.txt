@@ -28,7 +28,7 @@ endif()
 # Project definition.
 
 project(OpenColorIO 
-    VERSION 2.0.0
+    VERSION 2.0.1
     DESCRIPTION "OpenColorIO (OCIO) is a complete color management solution"
     HOMEPAGE_URL https://github.com/AcademySoftwareFoundation/OpenColorIO
     LANGUAGES CXX C)
@@ -128,13 +128,6 @@ option(OCIO_WARNING_AS_ERROR "Set build error level for CI testing" OFF)
 
 option(OCIO_USE_SSE "Specify whether to enable SSE CPU performance optimizations" ON)
 option(OCIO_INLINES_HIDDEN "Specify whether to build with -fvisibility-inlines-hidden" ${UNIX})
-
-
-###############################################################################
-# Supplemental builtins
-
-# Add supplemental built-in transformations such as camera related one.
-option(OCIO_ADD_EXTRA_BUILTINS "Specify whether to add supplemental built-in transforms" ON)
 
 
 ###############################################################################
@@ -249,11 +242,26 @@ include(FindExtPackages)
 ###############################################################################
 # Progress to other sources
 
-add_subdirectory(ext)
-add_subdirectory(include)
-add_subdirectory(src)
-add_subdirectory(tests)
-if(OCIO_BUILD_DOCS)
-	add_subdirectory(docs)
-endif()
 add_subdirectory(vendor)
+if(OCIO_BUILD_DOCS)
+    add_subdirectory(docs)
+endif()
+add_subdirectory(tests)
+add_subdirectory(src)
+add_subdirectory(include)
+add_subdirectory(ext)
+
+
+###############################################################################
+# Configure env script
+
+if(WIN32)
+    set(OCIO_SETUP_NAME setup_ocio.bat)
+else()
+    set(OCIO_SETUP_NAME setup_ocio.sh)
+endif()
+
+configure_file(${CMAKE_SOURCE_DIR}/share/ocio/${OCIO_SETUP_NAME}.in
+    ${CMAKE_CURRENT_BINARY_DIR}/share/ocio/${OCIO_SETUP_NAME} @ONLY)
+
+INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/share/ocio/${OCIO_SETUP_NAME} DESTINATION share/ocio/)

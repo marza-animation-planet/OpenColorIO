@@ -42,7 +42,7 @@ const char * OCIO_ACTIVE_DISPLAYS_ENVVAR      = "OCIO_ACTIVE_DISPLAYS";
 const char * OCIO_ACTIVE_VIEWS_ENVVAR         = "OCIO_ACTIVE_VIEWS";
 const char * OCIO_INACTIVE_COLORSPACES_ENVVAR = "OCIO_INACTIVE_COLORSPACES";
 const char * OCIO_OPTIMIZATION_FLAGS_ENVVAR   = "OCIO_OPTIMIZATION_FLAGS";
-const char * OCIO_USER_CATEGORIES_ENVVAR      = "OCIO_USER_CATEGORIES_ENVVAR";
+const char * OCIO_USER_CATEGORIES_ENVVAR      = "OCIO_USER_CATEGORIES";
 
 // A shared view using this for the color space name will use a display color space that
 // has the same name as the display the shared view is used by.
@@ -1300,21 +1300,35 @@ void Config::validate() const
 
     // Only the 'predefined' mode imposes to have all the context variables explicitely defined
     // in the config file. The 'all' mode exclusively relies on the environment variables.
-    if (getImpl()->m_context->getEnvironmentMode() == ENV_ENVIRONMENT_LOAD_PREDEFINED)
+    if (getMajorVersion() >= 2
+        && getImpl()->m_context->getEnvironmentMode() == ENV_ENVIRONMENT_LOAD_PREDEFINED)
     {
         for (const auto & env : getImpl()->m_env)
         {
-            const std::string ctxVariable = std::string("$") + env.first;
-            const std::string ctxValue
-                = getImpl()->m_context->resolveStringVar(ctxVariable.c_str());
+            const std::string ctxValue = env.second;
 
             if (ContainsContextVariables(ctxValue))
             {
-                std::ostringstream oss;
-                oss << "Unresolved context variable '"
-                    << env.first << " = "
-                    << env.second << "'.";
-                throw Exception(oss.str().c_str());
+                // When a context variable default value contains another context variable, the
+                // only legal case is ENV = $ENV. It means that there is no default value i.e. an
+                // system env. variable must exist.
+
+                const std::string ctxVariable1 = std::string("$")  + env.first;
+                const std::string ctxVariable2 = std::string("${") + env.first + std::string("}");
+                const std::string ctxVariable3 = std::string("%")  + env.first + std::string("%");
+
+                const bool isValid = (ctxVariable1 == ctxValue)
+                                        || (ctxVariable2 == ctxValue)
+                                        || (ctxVariable3 == ctxValue);
+
+                if (!isValid)
+                {
+                    std::ostringstream oss;
+                    oss << "Unresolved context variable in environment declaration '"
+                        << env.first << " = "
+                        << env.second << "'.";
+                    throw Exception(oss.str().c_str());
+                }
             }
         }
     }
