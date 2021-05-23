@@ -47,8 +47,13 @@
     #endif
     #define OCIOHIDDEN
 #elif defined __GNUC__
-    #define OCIOEXPORT __attribute__ ((visibility("default")))
-    #define OCIOHIDDEN __attribute__ ((visibility("hidden")))
+    #ifndef OpenColorIO_SKIP_IMPORTS
+        #define OCIOEXPORT __attribute__ ((visibility("default")))
+        #define OCIOHIDDEN __attribute__ ((visibility("hidden")))
+    #else
+        #define OCIOEXPORT
+        #define OCIOHIDDEN
+    #endif
 #else // Others platforms not supported atm
     #define OCIOEXPORT
     #define OCIOHIDDEN
