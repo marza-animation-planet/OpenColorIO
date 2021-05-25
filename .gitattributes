@@ -19,3 +19,6 @@ tests/data/files/*.icm binary
 
 # Avoid Windows line breaks in shell scripts (bound to fail)
 *.sh text eol=lf
+
+# Version script
+src/bindings/python/PyOpenColorIO.map text eol=lf

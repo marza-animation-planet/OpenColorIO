@@ -1,0 +1,4 @@
+{
+    global: initPyOpenColorIO; PyInit_PyOpenColorIO;
+    local: *;
+};

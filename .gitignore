@@ -27,3 +27,4 @@ ext/*/
 *.cmake.*
 /.sconf_temp/*
 /config.log
+/expat.status

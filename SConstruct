@@ -361,6 +361,7 @@ projs = [
       "type": "dynamicmodule",
       "alias": "ocio-python",
       "ext": python.ModuleExtension(),
+      "vismap": ("src/bindings/python/PyOpenColorIO.map" if sys.platform not in ["win32", "darwin"] else None),
       "prefix": python.ModulePrefix() + "/" + python.Version(),
       "incdirs": ["src/bindings/python", "pybind11/include", "src", "share/docs"], # empty docstrings
       "defs": ["PYOCIO_NAME=PyOpenColorIO"],
