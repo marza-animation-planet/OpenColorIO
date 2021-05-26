@@ -307,6 +307,8 @@ def RequireOCIO(env, static=True):
    excons.Link(env, OCIOPath(static), static=static, force=True, silent=True)
    if sys.platform == "darwin":
       env.Append(LINKFLAGS=" -framework Carbon -framework IOKit")
+   elif sys.platform == "win32":
+      env.Append(LIBS=["user32", "gdi32"])
    if static:
       YamlCppRequire(env)
       ExpatRequire(env)
