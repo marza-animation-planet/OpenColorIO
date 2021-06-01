@@ -286,6 +286,7 @@ projs = [
       "type": "dynamicmodule",
       "alias": "ocio-python",
       "ext": python.ModuleExtension(),
+      "vismap": ("src/pyglue/PyOpenColorIO%s.map" % ("_osx" if sys.platform == "darwin" else "") if sys.platform != "win32" else None),
       "prefix": python.ModulePrefix() + "/" + python.Version(),
       "incdirs": ["export", "src/pyglue"],
       "defs": ["PYOCIO_NAME=PyOpenColorIO"],
