@@ -1,12 +1,12 @@
 [submodule "excons"]
 	path = excons
-	url = git://github.com/gatgui/excons.git
+	url = git@github.com:marza-animation-planet/excons.git
 [submodule "TinyXML"]
 	path = TinyXML
-	url = git://github.com/gatgui/TinyXML
+	url = git@github.com:marza-animation-planet/TinyXML
 [submodule "Little-CMS"]
 	path = Little-CMS
-	url = git://github.com/gatgui/Little-CMS
+	url = git@github.com:marza-animation-planet/Little-CMS
 [submodule "yaml-cpp"]
 	path = yaml-cpp
-	url = git://github.com/gatgui/yaml-cpp
+	url = git@github.com:marza-animation-planet/yaml-cpp
